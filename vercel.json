@@ -4,9 +4,25 @@
     {
       "src": "app.py",
       "use": "@vercel/python"
+    },
+    {
+      "src": "static/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
+    {
+      "src": "^/$",
+      "dest": "/static/index.html"
+    },
+    {
+      "src": "^/(style\\.css|app\\.js|chart_game\\.css|chart_game\\.js|custom_quant\\.css|custom_quant\\.js)$",
+      "dest": "/static/$1"
+    },
+    {
+      "src": "/static/(.*)",
+      "dest": "/static/$1"
+    },
     {
       "src": "/(.*)",
       "dest": "app.py"

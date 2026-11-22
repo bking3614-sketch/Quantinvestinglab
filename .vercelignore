@@ -1,0 +1,10 @@
+.git
+.github
+__pycache__
+*.pyc
+.quant_cache
+.chart_game_cache
+scratch
+run.bat
+generate_seed_cache.py
+README.md

@@ -4151,8 +4151,8 @@ def _legacy_custom_quant_backtest():
 
 
 # Vercel 서버 시작 시 즉시 내장 캐시 데이터를 메모리에 적재
-if os.environ.get("VERCEL"):
-    _load_or_fetch_data()
+# if os.environ.get("VERCEL"):
+# _load_or_fetch_data()
 
 if __name__ == '__main__':
     loader_thread = threading.Thread(target=_load_or_fetch_data)
