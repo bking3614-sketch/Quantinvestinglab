@@ -1,10 +1,11 @@
-.git
+.git/
 .github
 __pycache__
 *.pyc
 .quant_cache
-.chart_game_cache
-scratch
+.chart_game_cache/
+scratch/
+!data_cache.csv
 run.bat
 generate_seed_cache.py
 README.md

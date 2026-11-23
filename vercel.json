@@ -4,6 +4,9 @@
     {
       "src": "app.py",
       "use": "@vercel/python"
+      "config":{
+        "includeFiles":["data_cache.csv"]
+      }
     },
     {
       "src": "static/**",
