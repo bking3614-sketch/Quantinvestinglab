@@ -2611,8 +2611,8 @@ def execute_backtest(
         return {"status": "error", "message": diag_msg, "diagnostic": diag_info}
 
     # 4. 리밸런싱 주기 생성
-    rule_map = {"1M": "M", "3M": "Q", "6M": "2Q", "1Y": "A", "M": "M", "Q": "Q", "SA": "2Q", "Y": "A"}
-    resample_rule = rule_map.get(rebalance_period, "Q")
+    rule_map = {"1M": "ME", "3M": "QE", "6M": "2QE", "1Y": "YE", "M": "ME", "Q": "QE", "SA": "2QE", "Y": "YE"}
+    resample_rule = rule_map.get(rebalance_period, "QE")
 
     rebalance_dates = price_df.resample(resample_rule).last().index.tolist()
     if not rebalance_dates or rebalance_dates[0] > price_df.index[0]:

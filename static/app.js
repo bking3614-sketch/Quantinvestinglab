@@ -837,64 +837,52 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ── Yahoo Finance 데이터 상태 확인 ──
-  async function checkDataStatus() {
-    try {
-      const res = await fetch('/api/status');
-      const st = await res.json();
+ // static/app.js (840~897행 부근 수정)
+async function checkDataStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const st = await res.json();
 
-      if (st.ready) {
-        state.isDataReady = true;
-        el.dataStatusText.textContent = `Yahoo Finance 로드 완료 (${st.start_date} ~ ${st.end_date})`;
-        el.dataStatusBadge.style.background = 'rgba(16, 185, 129, 0.15)';
-        el.dataStatusBadge.style.borderColor = 'rgba(16, 185, 129, 0.35)';
-        el.dataStatusBadge.querySelector('.status-dot').style.backgroundColor = '#10b981';
-        el.dataStatusBadge.querySelector('.status-dot').classList.remove('pulsing');
-        return true;
-      } else if (st.loading) {
-        state.isDataReady = false;
-        el.dataStatusText.textContent = 'Yahoo Finance에서 최신 일봉 수집 중...';
-        el.dataStatusBadge.style.background = 'rgba(59, 130, 246, 0.15)';
-        el.dataStatusBadge.style.borderColor = 'rgba(59, 130, 246, 0.35)';
-        el.dataStatusBadge.querySelector('.status-dot').style.backgroundColor = '#3b82f6';
-        el.dataStatusBadge.querySelector('.status-dot').classList.add('pulsing');
-        return false;
-      } else if (st.error) {
-        state.isDataReady = false;
-        el.dataStatusText.textContent = `오류: ${st.error.slice(0, 30)}...`;
-        el.dataStatusBadge.style.background = 'rgba(239, 68, 68, 0.15)';
-        el.dataStatusBadge.style.borderColor = 'rgba(239, 68, 68, 0.35)';
-        el.dataStatusBadge.querySelector('.status-dot').style.backgroundColor = '#ef4444';
-        return false;
-      }
-    } catch (e) {
-      console.warn('상태 확인 실패:', e);
-      return false;
+    if (st.ready) {
+      state.isDataReady = true;
+      el.dataStatusText.textContent = `Yahoo Finance 로드 완료 (${st.start_date} ~ ${st.end_date})`;
+      el.dataStatusBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+      el.dataStatusBadge.style.borderColor = 'rgba(16, 185, 129, 0.35)';
+      el.dataStatusBadge.querySelector('.status-dot').style.backgroundColor = '#10b981';
+      el.dataStatusBadge.querySelector('.status-dot').classList.remove('pulsing');
+      return 'ready';
+    } else if (st.error) {
+      state.isDataReady = false;
+      el.dataStatusText.textContent = `오류: ${st.error.slice(0, 30)}...`;
+      el.dataStatusBadge.style.background = 'rgba(239, 68, 68, 0.15)';
+      el.dataStatusBadge.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+      el.dataStatusBadge.querySelector('.status-dot').style.backgroundColor = '#ef4444';
+      return 'error';
     }
+    return 'loading';
+  } catch (e) {
+    return 'loading';
   }
+}
 
-  el.btnRefreshData.addEventListener('click', async () => {
-    try {
-      await fetch('/api/refresh_data', { method: 'POST' });
-      showLoading('Yahoo Finance 최신 데이터 다운로드를 시작합니다...');
-      pollStatusUntilReady();
-    } catch (e) {
-      alert('데이터 새로고침 요청 실패: ' + e);
+async function pollStatusUntilReady(maxAttempts = 30) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const status = await checkDataStatus();
+    if (status === 'ready') {
+      hideLoading();
+      runBacktest();
+      return;
     }
-  });
-
-  async function pollStatusUntilReady(maxAttempts = 30) {
-    for (let i = 0; i < maxAttempts; i++) {
-      const ready = await checkDataStatus();
-      if (ready) {
-        hideLoading();
-        runBacktest();
-        return;
-      }
-      await new Promise(r => setTimeout(r, 2000));
+    if (status === 'error') {
+      hideLoading();
+      alert('데이터 로드 중 서버 오류가 발생했습니다. 캐시 파일 상태를 확인해주세요.');
+      return;
     }
-    hideLoading();
-    alert('Yahoo Finance 데이터 수집 대기 시간이 초과되었습니다.');
+    await new Promise(r => setTimeout(r, 2000));
   }
+  hideLoading();
+  alert('Yahoo Finance 데이터 수집 대기 시간이 초과되었습니다.');
+}
 
   function showLoading(text = '백테스트 연산 수행 중...') {
     el.loadingText.textContent = text;
