@@ -334,6 +334,31 @@ def _load_or_fetch_data(force_download=False):
             _data_status["error"] = str(e)
         print(f"[ERROR] Yahoo Finance 데이터 수집 실패: {e}")
 
+# app.py (337행 부근에 추가)
+def _ensure_data_ready() -> bool:
+    """서버리스 콜드 스타트 시 메모리에 데이터가 없으면 즉시 캐시를 동기 로드합니다."""
+    with _lock:
+        if _data_status["ready"] and _data is not None:
+            return True
+
+    # 여러 경로 후보에서 data_cache.csv 탐색
+    candidates = [
+        CACHE_FILE,
+        BUNDLED_CACHE_FILE,
+        os.path.join(os.getcwd(), "data_cache.csv"),
+    ]
+    has_local_cache = any(os.path.exists(p) for p in candidates)
+
+    # Vercel 환경인데 로컬 CSV 캐시조차 없으면 무한 대기 방지를 위해 즉시 에러 반환
+    if os.environ.get("VERCEL") and not has_local_cache:
+        with _lock:
+            _data_status["ready"] = False
+            _data_status["error"] = "배포 번들에 data_cache.csv 파일이 누락되었습니다."
+        return False
+
+    _load_or_fetch_data(force_download=False)
+    with _lock:
+        return bool(_data_status["ready"] and _data is not None)
 
 # ── 연도별 MDD 및 최악의 해 계산 ─────────────────────────────
 def _calc_worst_year_mdd(values: np.ndarray, dates: pd.DatetimeIndex):
@@ -2242,6 +2267,7 @@ def search_ticker():
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
+    _ensure_data_ready()
     with _lock:
         st = dict(_data_status)
     return jsonify(st)
@@ -2270,9 +2296,8 @@ def refresh_data():
 
 @app.route('/api/date_range', methods=['GET'])
 def get_date_range():
-    with _lock:
-        if not _data_status["ready"] or _data is None:
-            return jsonify({"status": "error", "message": "데이터 준비 중"}), 400
+    if not _ensure_data_ready():
+        return jsonify({"status": "error", "message": "데이터 준비 중"}), 400
 
     etf1 = request.args.get('etf1', 'SOXL').strip().upper()
     etf2 = request.args.get('etf2', 'TQQQ').strip().upper()
@@ -2308,13 +2333,12 @@ def get_date_range():
 
 @app.route('/api/permanent_portfolio', methods=['POST'])
 def permanent_portfolio():
-    with _lock:
-        if not _data_status["ready"]:
-            return jsonify({
-                "status": "error",
-                "message": "데이터가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
-            }), 400
-
+    if not _ensure_data_ready():
+        return jsonify({
+            "status": "error",
+            "message": "데이터가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
+        }), 400
+    
     data = request.get_json() or {}
     w_spy = float(data.get('w_spy', 25)) / 100.0
     w_tlt = float(data.get('w_tlt', 25)) / 100.0
@@ -2351,60 +2375,13 @@ def permanent_portfolio():
             "message": str(e)
         }), 400
 
-
-
-    strategy_id = request.args.get('strategy', 'BAA').strip().upper()
-    try:
-        sig = _get_dynamic_live_signal(strategy_id)
-        return jsonify({
-            "status": "success",
-            "live_signal": sig
-        })
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 400
-
-
-
-    data = request.get_json() or {}
-    strategy_id = str(data.get('strategy_id', 'BAA')).strip().upper()
-    benchmark_id = str(data.get('benchmark_id', 'SPY')).strip().upper()
-
-    init_cap = float(data.get('init_cap', 50000000))
-    monthly_add = float(data.get('monthly_add', 500000))
-    start_date = data.get('start_date', '1970-01-01')
-    end_date = data.get('end_date')
-    raw_fee = float(data.get('fee_rate', 0.1))
-    fee_rate = raw_fee / 100.0 if raw_fee > 0.01 else raw_fee
-
-    try:
-        result = _run_dynamic_allocation_backtest(
-            strategy_id=strategy_id,
-            benchmark_id=benchmark_id,
-            init_cap=init_cap,
-            monthly_add=monthly_add,
-            start_date=start_date,
-            end_date=end_date,
-            fee_rate=fee_rate
-        )
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 400
-
-
 @app.route('/api/allweather_portfolio', methods=['POST'])
 def allweather_portfolio():
-    with _lock:
-        if not _data_status["ready"]:
-            return jsonify({
-                "status": "error",
-                "message": "데이터가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
-            }), 400
+    if not _ensure_data_ready():
+        return jsonify({
+            "status": "error",
+            "message": "데이터가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
+        }), 400
 
     data = request.get_json() or {}
     w_spy = float(data.get('w_spy', 30)) / 100.0
@@ -2444,61 +2421,14 @@ def allweather_portfolio():
             "message": str(e)
         }), 400
 
-
-
-    strategy_id = request.args.get('strategy', 'BAA').strip().upper()
-    try:
-        sig = _get_dynamic_live_signal(strategy_id)
-        return jsonify({
-            "status": "success",
-            "live_signal": sig
-        })
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 400
-
-
-
-    data = request.get_json() or {}
-    strategy_id = str(data.get('strategy_id', 'BAA')).strip().upper()
-    benchmark_id = str(data.get('benchmark_id', 'SPY')).strip().upper()
-
-    init_cap = float(data.get('init_cap', 50000000))
-    monthly_add = float(data.get('monthly_add', 500000))
-    start_date = data.get('start_date', '1970-01-01')
-    end_date = data.get('end_date')
-    raw_fee = float(data.get('fee_rate', 0.1))
-    fee_rate = raw_fee / 100.0 if raw_fee > 0.01 else raw_fee
-
-    try:
-        result = _run_dynamic_allocation_backtest(
-            strategy_id=strategy_id,
-            benchmark_id=benchmark_id,
-            init_cap=init_cap,
-            monthly_add=monthly_add,
-            start_date=start_date,
-            end_date=end_date,
-            fee_rate=fee_rate
-        )
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 400
-
-
 @app.route('/api/backtest', methods=['POST'])
 def backtest():
-    with _lock:
-        if not _data_status["ready"]:
-            return jsonify({
-                "status": "error",
-                "message": "데이터가 아직 준비되지 않았습니다. Yahoo Finance 수집 완료 후 다시 시도해주세요."
-            }), 400
-
+    if not _ensure_data_ready():
+        return jsonify({
+            "status": "error",
+            "message": "데이터가 아직 준비되지 않았습니다. Yahoo Finance 수집 완료 후 다시 시도해주세요."
+        }), 400
+        
     data = request.get_json() or {}
     etf1 = str(data.get('etf1', 'SOXL')).strip().upper()
     etf2 = str(data.get('etf2', 'TQQQ')).strip().upper()
@@ -2541,60 +2471,13 @@ def backtest():
             "message": str(e)
         }), 400
 
-
-
-    strategy_id = request.args.get('strategy', 'BAA').strip().upper()
-    try:
-        sig = _get_dynamic_live_signal(strategy_id)
-        return jsonify({
-            "status": "success",
-            "live_signal": sig
-        })
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 400
-
-
-
-    data = request.get_json() or {}
-    strategy_id = str(data.get('strategy_id', 'BAA')).strip().upper()
-    benchmark_id = str(data.get('benchmark_id', 'SPY')).strip().upper()
-
-    init_cap = float(data.get('init_cap', 50000000))
-    monthly_add = float(data.get('monthly_add', 500000))
-    start_date = data.get('start_date', '1970-01-01')
-    end_date = data.get('end_date')
-    raw_fee = float(data.get('fee_rate', 0.1))
-    fee_rate = raw_fee / 100.0 if raw_fee > 0.01 else raw_fee
-
-    try:
-        result = _run_dynamic_allocation_backtest(
-            strategy_id=strategy_id,
-            benchmark_id=benchmark_id,
-            init_cap=init_cap,
-            monthly_add=monthly_add,
-            start_date=start_date,
-            end_date=end_date,
-            fee_rate=fee_rate
-        )
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 400
-
-
 @app.route('/api/dynamic_live_signal', methods=['GET'])
 def dynamic_live_signal():
-    with _lock:
-        if not _data_status["ready"]:
-            return jsonify({
-                "status": "error",
-                "message": "데이터가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
-            }), 400
+    if not _ensure_data_ready():
+        return jsonify({
+            "status": "error",
+            "message": "데이터가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
+        }), 400
 
     strategy_id = request.args.get('strategy', 'BAA').strip().upper()
     try:
@@ -2612,12 +2495,11 @@ def dynamic_live_signal():
 
 @app.route('/api/dynamic_allocation', methods=['POST'])
 def dynamic_allocation():
-    with _lock:
-        if not _data_status["ready"]:
-            return jsonify({
-                "status": "error",
-                "message": "데이터가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
-            }), 400
+    if not _ensure_data_ready():
+        return jsonify({
+            "status": "error",
+            "message": "데이터가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
+        }), 400
 
     data = request.get_json() or {}
     strategy_id = str(data.get('strategy_id', 'BAA')).strip().upper()
