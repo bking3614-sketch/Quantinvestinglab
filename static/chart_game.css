@@ -1628,3 +1628,443 @@
   justify-content: space-between;
 }
 
+/* ==========================================================================
+   기기별 반응형 최적화 (PC 1367px 이상은 기존 원본 100% 유지)
+   - 1025px ~ 1366px : 태블릿 가로 (아이패드 프로 12.9인치 가로 1366x1024 최적화)
+   - 641px  ~ 1024px : 태블릿 세로 (아이패드 프로 12.9인치 세로 1024x1366 최적화)
+   - 640px  이하     : 스마트폰 (갤럭시 S23 플러스 등 모바일 최적화)
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   [1] 태블릿 가로 모드 (아이패드 프로 12.9인치 가로: 1025px ~ 1366px)
+   -------------------------------------------------------------------------- */
+@media (min-width: 1025px) and (max-width: 1366px) {
+  /* 상단 헤더 & 6개 탭이 1366px 폭 안에서 잘리지 않고 한눈에 들어오도록 조정 */
+  .top-nav {
+    height: auto !important;
+    min-height: 64px;
+    padding: 8px 16px !important;
+    gap: 10px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .brand-text h1 {
+    font-size: 1.02rem !important;
+  }
+
+  .sub-badge {
+    display: none !important;
+  }
+
+  .main-tab-nav {
+    padding: 3px !important;
+    gap: 3px !important;
+    overflow-x: auto;
+  }
+
+  .tab-btn {
+    padding: 7px 10px !important;
+    font-size: 0.8rem !important;
+    gap: 5px !important;
+    white-space: nowrap !important;
+  }
+
+  .status-badge {
+    padding: 5px 10px !important;
+    font-size: 0.76rem !important;
+  }
+
+  /* 좌우 2단 분할 레이아웃 유지 (아이패드 12.9인치 가로 대화면 활용) */
+  .main-layout {
+    grid-template-columns: 325px 1fr !important;
+  }
+
+  .control-panel {
+    padding: 18px 16px !important;
+    gap: 16px !important;
+  }
+
+  .dashboard-display {
+    padding: 18px 20px !important;
+    gap: 18px !important;
+  }
+
+  .custom-quant-layout {
+    grid-template-columns: 365px 1fr !important;
+    gap: 16px !important;
+  }
+
+  .cg-layout {
+    grid-template-columns: 66% 34% !important;
+    gap: 12px !important;
+  }
+
+  .cg-chart-stage {
+    min-height: 580px !important;
+  }
+
+  /* 터치 조작 편의성을 위한 버튼/입력창 최소 높이 확보 */
+  button,
+  select,
+  input[type="text"],
+  input[type="number"],
+  input[type="date"] {
+    min-height: 36px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   [2] 태블릿 세로 모드 (아이패드 프로 12.9인치 세로: 641px ~ 1024px)
+   -------------------------------------------------------------------------- */
+@media (min-width: 641px) and (max-width: 1024px) {
+  /* 상단 헤더 2단 정돈 (1줄: 브랜드+상태, 2줄: 6개 탭 전체 배치) */
+  .top-nav {
+    height: auto !important;
+    padding: 12px 18px !important;
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+
+  .brand {
+    flex: 1 1 auto;
+  }
+
+  .sub-badge {
+    display: none !important;
+  }
+
+  .main-tab-nav {
+    order: 3;
+    width: 100% !important;
+    justify-content: space-between !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px !important;
+  }
+
+  .tab-btn {
+    flex: 1 0 auto !important;
+    justify-content: center !important;
+    padding: 8px 10px !important;
+    font-size: 0.82rem !important;
+    white-space: nowrap !important;
+  }
+
+  /* 설정 패널을 상단 1열로 풀고 고정(sticky) 해제 */
+  .main-layout,
+  .custom-quant-layout,
+  .cg-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: auto !important;
+  }
+
+  .control-panel {
+    position: static !important;
+    top: auto !important;
+    max-height: none !important;
+    overflow-y: visible !important;
+    width: 100% !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border-subtle) !important;
+    padding: 20px !important;
+  }
+
+  .dashboard-display {
+    padding: 20px !important;
+    gap: 20px !important;
+  }
+
+  /* 12.9인치 세로 화면 폭(1024px)을 활용한 3열 KPI 카드 & 2열 차트 배치 */
+  .metrics-grid,
+  .cq-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 14px !important;
+  }
+
+  .charts-row {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 16px !important;
+  }
+
+  .main-chart-wrapper {
+    height: 360px !important;
+  }
+
+  .cg-chart-stage {
+    min-height: 480px !important;
+  }
+
+  .cg-chart-container {
+    min-height: 320px !important;
+  }
+
+  .table-responsive,
+  .cq-table-wrapper {
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   [3] 스마트폰 전용 (갤럭시 S23 플러스 등 640px 이하)
+   -------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  /* 상단 헤더 슬림화 & 6개 메인 탭 가로 스와이프 바 */
+  .top-nav {
+    height: auto !important;
+    padding: 10px 12px !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  .brand {
+    gap: 10px !important;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .brand-logo {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 1rem !important;
+    flex-shrink: 0;
+  }
+
+  .brand-text h1 {
+    font-size: 0.95rem !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sub-badge {
+    display: none !important;
+  }
+
+  .nav-controls {
+    gap: 8px !important;
+    flex-shrink: 0;
+  }
+
+  .status-badge {
+    padding: 4px 10px !important;
+    font-size: 0.72rem !important;
+    max-width: 145px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .btn-refresh {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .main-tab-nav {
+    order: 3;
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 4px !important;
+    gap: 4px !important;
+    justify-content: flex-start !important;
+  }
+
+  .main-tab-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab-btn {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+    font-size: 0.78rem !important;
+    padding: 7px 11px !important;
+    gap: 6px !important;
+  }
+
+  /* 2단 분할 레이아웃 및 고정(sticky) 사이드바 해제 */
+  .main-layout,
+  .custom-quant-layout,
+  .cg-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: auto !important;
+  }
+
+  .control-panel {
+    position: static !important;
+    top: auto !important;
+    max-height: none !important;
+    overflow-y: visible !important;
+    width: 100% !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border-subtle) !important;
+    padding: 16px 14px !important;
+    gap: 14px !important;
+  }
+
+  .dashboard-display,
+  .cq-results-container {
+    padding: 14px 12px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    gap: 16px !important;
+  }
+
+  /* 모바일 브라우저 입력창 포커스 시 강제 화면 확대 방지 */
+  input[type="text"],
+  input[type="number"],
+  input[type="date"],
+  input[type="password"],
+  select,
+  .form-control,
+  .cq-input,
+  .cq-select,
+  .cg-input,
+  .cg-select {
+    font-size: 16px !important;
+  }
+
+  /* 핵심 지표(KPI) 카드 2열 그리드 정리 */
+  .metrics-grid,
+  .cq-kpi-grid,
+  .cg-result-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .metric-card,
+  .cq-kpi-card {
+    padding: 12px 10px !important;
+    min-width: 0 !important;
+  }
+
+  .metric-value,
+  .cq-kpi-value {
+    font-size: 1.08rem !important;
+    word-break: break-all;
+  }
+
+  .metric-label,
+  .cq-kpi-title {
+    font-size: 0.72rem !important;
+  }
+
+  /* 차트 패널 및 높이 최적화 */
+  .chart-panel,
+  .table-panel,
+  .summary-panel,
+  .cq-table-card,
+  .cg-chart-panel,
+  .cg-trading-panel {
+    padding: 14px 12px !important;
+    border-radius: 10px !important;
+  }
+
+  .charts-row {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .chart-wrapper,
+  .main-chart-wrapper {
+    height: 250px !important;
+  }
+
+  .dd-chart-wrapper,
+  .bar-chart-wrapper {
+    height: 200px !important;
+  }
+
+  .chart-header,
+  .table-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+
+  /* 테이블 가로 터치 스크롤 최적화 */
+  .table-responsive,
+  .cq-table-wrapper {
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table th,
+  table td {
+    padding: 8px 9px !important;
+    font-size: 0.76rem !important;
+    white-space: nowrap !important;
+  }
+
+  /* 동적 자산 배분 / 마법공식 / 차트게임 모바일 세부 조정 */
+  .dyn-live-signal-hero {
+    padding: 14px 12px !important;
+  }
+
+  .hero-body-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .custom-quant-layout {
+    padding: 12px !important;
+    gap: 14px !important;
+  }
+
+  .cq-step-header {
+    padding: 12px 14px !important;
+  }
+
+  .cq-step-body {
+    padding: 12px !important;
+  }
+
+  .cq-filter-row {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  .cg-top-bar {
+    padding: 10px 12px !important;
+    gap: 8px !important;
+  }
+
+  .cg-control-group {
+    width: 100% !important;
+    gap: 6px !important;
+  }
+
+  #cgTickerInput {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .cg-btn-pill-group {
+    flex-wrap: wrap !important;
+  }
+
+  .cg-chart-stage {
+    min-height: 360px !important;
+  }
+
+  .cg-chart-container {
+    min-height: 240px !important;
+  }
+
+  .cg-modal-dialog {
+    width: 94vw !important;
+    max-width: 94vw !important;
+    max-height: 88vh !important;
+    overflow-y: auto !important;
+    padding: 14px 12px !important;
+  }
+
+  #cgCustomColorPicker {
+    max-width: 92vw !important;
+  }
+}
