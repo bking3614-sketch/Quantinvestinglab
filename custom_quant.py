@@ -997,8 +997,14 @@ class KRXAdapter(BaseDataAdapter):
         self._admin_cache_file = os.path.join(self.cache_dir, "krx_admin_issues.json")
         self._krx_universe: Dict[str, Dict[str, Any]] = {}
         self._admin_issues: set = set()
-        self._load_admin_issues()
-        self._load_or_fetch_krx_universe()
+        self._initialized = False  # ← [추가] "아직 명단 안 받아옴" 스티커 붙이기
+
+    def _ensure_initialized(self):  # ← [추가] 나중에 손님이 한국 주식 찾을 때 실행할 행동 규칙
+        if self._initialized:       # 이미 받아왔다면?
+            return                  # 또 전화하지 말고 그냥 넘어가기
+        self._initialized = True    # 이제 받아올 거니까 스티커를 "받아왔음"으로 바꾸기
+        self._load_admin_issues()           # 원래 위에 있던 줄을 여기로 이동!
+        self._load_or_fetch_krx_universe()  # 원래 위에 있던 줄을 여기로 이동!
 
     def _normalize_sector(self, raw_sector: str) -> str:
         """업종명을 표준 26개 섹터 코드로 정규화"""
@@ -1090,7 +1096,9 @@ class KRXAdapter(BaseDataAdapter):
         # 2) KRX KIND 상장법인 목록 다운로드 파싱
         try:
             url = "http://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13"
-            tables = pd.read_html(url, header=0, encoding="euc-kr")
+            resp = requests.get(url, timeout=3)   # ← [추가 1] 주소로 접속하되 최대 3초만 기다리기
+            resp.encoding = "euc-kr"              # ← [추가 2] 받아온 문서의 한글 글자 방식 맞추기
+            tables = pd.read_html(resp.text, header=0)  # ← [추가 3] 받아온 문서에서 표(목록) 꺼내기
             if tables and not tables[0].empty:
                 df = tables[0]
                 df["종목코드"] = df["종목코드"].apply(lambda x: f"{int(x):06d}")
@@ -1127,6 +1135,7 @@ class KRXAdapter(BaseDataAdapter):
     def get_universe_tickers(self, country: str, market: str) -> List[Dict[str, Any]]:
         if country.upper() != "KR":
             return []
+        self._ensure_initialized()  # ← [추가] 한국 주식이면 여기서 명단 받아오기!
         if self._krx_universe:
             res = list(self._krx_universe.values())
             if market.upper() in ["KOSPI", "KOSDAQ"]:
@@ -1141,6 +1150,7 @@ class KRXAdapter(BaseDataAdapter):
         """
         네이버 증시 외국인/기관/개인 수급(20일 누적 순매수강도) 및 외인 지분율 파싱
         """
+        self._ensure_initialized()  # ← [추가] 관리종목 목록이 필요하니 여기서 받아오기!
         clean_code = re.sub(r"[^0-9]", "", code)
         trend = {
             "foreign_net_buy_20d": None,
@@ -1180,6 +1190,7 @@ class KRXAdapter(BaseDataAdapter):
 
     def get_fundamental_and_metrics(self, ticker: str, benchmark_series: Optional[pd.Series] = None) -> Dict[str, Any]:
         """KRX/Naver를 통한 수급 및 관리종목 보강 지표 반환"""
+        self._ensure_initialized()  # ← [추가] 업종과 관리종목 정보를 쓰기 전에 받아오기!
         clean_code = re.sub(r"[^0-9]", "", ticker)
         meta = self._krx_universe.get(clean_code, {})
         trend = self.get_investor_trading_trend(clean_code)
