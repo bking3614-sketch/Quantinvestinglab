@@ -7,6 +7,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── 전역 상태 ──
   const state = {
     currentTab: 'seasonality', // 'seasonality' | 'permanent' | 'allweather'
+    assets: [
+      { ticker: 'SOXL', name: '필라델피아 반도체 3X', weight: 50 },
+      { ticker: 'TQQQ', name: '나스닥100 3X', weight: 50 }
+    ],
     etf1: 'SOXL',
     etf2: 'TQQQ',
     etf1_ratio: 50,
@@ -102,28 +106,12 @@ document.addEventListener('DOMContentLoaded', () => {
     periodDurationPreview: document.getElementById('periodDurationPreview'),
     quickPeriodButtons: document.querySelectorAll('.btn-quick-period'),
 
-    // 🌟 신규: 티커 검색 엘리먼트
-    etf1SearchInput: document.getElementById('etf1SearchInput'),
-    etf2SearchInput: document.getElementById('etf2SearchInput'),
-    etf1ClearBtn: document.getElementById('etf1ClearBtn'),
-    etf2ClearBtn: document.getElementById('etf2ClearBtn'),
-    etf1Dropdown: document.getElementById('etf1Dropdown'),
-    etf2Dropdown: document.getElementById('etf2Dropdown'),
-    etf1Badge: document.getElementById('etf1Badge'),
-    etf2Badge: document.getElementById('etf2Badge'),
-
-    // TQQQ & ETF1 양방향 비중 제어 엘리먼트
-    etf1RatioInput: document.getElementById('etf1RatioInput'),
-    etf2RatioInput: document.getElementById('etf2RatioInput'),
-    inputEtf1Ticker: document.getElementById('inputEtf1Ticker'),
-    inputEtf2Ticker: document.getElementById('inputEtf2Ticker'),
-    quickRatioButtons: document.querySelectorAll('.btn-quick-ratio'),
-    ratioSlider: document.getElementById('ratioSlider'),
-    ratioSummary: document.getElementById('ratioSummary'),
-    ratioFill1: document.getElementById('ratioFill1'),
-    ratioFill2: document.getElementById('ratioFill2'),
-    sliderEtf1Label: document.getElementById('sliderEtf1Label'),
-    sliderEtf2Label: document.getElementById('sliderEtf2Label'),
+    // 🌟 멀티 자산 배분 카드 UI 엘리먼트
+    seasonAssetsGrid: document.getElementById('seasonAssetsGrid'),
+    seasonSumBadge: document.getElementById('seasonSumBadge'),
+    btnAddSeasonAsset: document.getElementById('btnAddSeasonAsset'),
+    seasonRatioBar: document.getElementById('seasonRatioBar'),
+    btnSeasonNormalize: document.getElementById('btnSeasonNormalize'),
 
     monthsGrid: document.getElementById('monthsGrid'),
     activeMonthsCount: document.getElementById('activeMonthsCount'),
@@ -489,59 +477,250 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // ── 🌟 비중 양방향 제어 로직 (TQQQ 및 ETF 1 비중 독립 입력 및 슬라이더 연동) 🌟 ──
-  function setRatios(r1, updateInputs = true) {
-    r1 = Math.max(0, Math.min(100, Math.round(r1)));
-    const r2 = 100 - r1;
+  // ── 🌟 멀티 자산 배분 카드 UI & 100% 비중 연동 🌟 ──
+  const SEASON_ASSET_COLORS = [
+    '#3b82f6', '#ec4899', '#10b981', '#f59e0b',
+    '#8b5cf6', '#06b6d4', '#f97316', '#ef4444'
+  ];
 
-    state.etf1_ratio = r1;
-    state.etf2_ratio = r2;
-
-    if (updateInputs) {
-      el.etf1RatioInput.value = r1;
-      el.etf2RatioInput.value = r2;
+  function syncLegacyEtfState() {
+    if (state.assets[0]) {
+      state.etf1 = state.assets[0].ticker || 'SOXL';
+      state.etf1_ratio = Number(state.assets[0].weight) || 0;
     }
-    el.ratioSlider.value = r1;
-
-    el.ratioSummary.textContent = `${state.etf1} ${r1}% : ${state.etf2} ${r2}%`;
-    el.ratioFill1.style.width = `${r1}%`;
-    el.ratioFill2.style.width = `${r2}%`;
-    el.sliderEtf1Label.textContent = `${state.etf1}: ${r1}%`;
-    el.sliderEtf2Label.textContent = `${state.etf2}: ${r2}%`;
+    if (state.assets[1]) {
+      state.etf2 = state.assets[1].ticker || 'TQQQ';
+      state.etf2_ratio = Number(state.assets[1].weight) || 0;
+    }
   }
 
-  // 슬라이더 이벤트
-  el.ratioSlider.addEventListener('input', (e) => {
-    setRatios(parseFloat(e.target.value));
-  });
+  function updateSeasonRatioUI() {
+    const total = state.assets.reduce((acc, a) => acc + (parseFloat(a.weight) || 0), 0);
+    const roundedTotal = Math.round(total * 10) / 10;
+    const isValid = Math.abs(roundedTotal - 100) < 0.05;
 
-  // ETF 1 비중 직접 입력창
-  el.etf1RatioInput.addEventListener('input', (e) => {
-    const val = parseFloat(e.target.value);
-    if (!isNaN(val)) {
-      setRatios(val, false);
-      el.etf2RatioInput.value = 100 - Math.max(0, Math.min(100, Math.round(val)));
+    if (el.seasonSumBadge) {
+      el.seasonSumBadge.textContent = `합계: ${roundedTotal}%`;
+      el.seasonSumBadge.classList.toggle('valid', isValid);
+      el.seasonSumBadge.classList.toggle('invalid', !isValid);
     }
-  });
 
-  // ETF 2 (TQQQ 등) 비중 직접 입력창
-  el.etf2RatioInput.addEventListener('input', (e) => {
-    const val2 = parseFloat(e.target.value);
-    if (!isNaN(val2)) {
-      const clamped2 = Math.max(0, Math.min(100, Math.round(val2)));
-      const r1 = 100 - clamped2;
-      setRatios(r1, false);
-      el.etf1RatioInput.value = r1;
+    if (el.seasonRatioBar) {
+      const denom = total > 0 ? Math.max(100, total) : 100;
+      el.seasonRatioBar.innerHTML = state.assets.map((a, idx) => {
+        const w = Math.max(0, parseFloat(a.weight) || 0);
+        const pct = (w / denom) * 100;
+        const color = SEASON_ASSET_COLORS[idx % SEASON_ASSET_COLORS.length];
+        return `<div class="perm-bar-seg" style="width:${pct}%; background:${color};" title="${a.ticker || '미선택'}: ${w}%"></div>`;
+      }).join('');
     }
-  });
 
-  // 퀵 비중 버튼들
-  el.quickRatioButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const r1 = parseFloat(btn.dataset.r1);
-      setRatios(r1);
+    syncLegacyEtfState();
+  }
+
+  function attachSeasonCardSearch(card, idx) {
+    const input = card.querySelector('.season-ticker-input');
+    const dropdown = card.querySelector('.ticker-dropdown');
+    const clearBtn = card.querySelector('.btn-clear-search');
+    const nameEl = card.querySelector('.season-asset-name');
+    if (!input || !dropdown || !clearBtn) return;
+
+    let debounceTimer = null;
+
+    async function search(q) {
+      try {
+        const res = await fetch(`/api/search_ticker?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (data.status === 'success') {
+          renderDropdown(data.results || []);
+        }
+      } catch (e) {
+        console.warn('검색 에러:', e);
+      }
+    }
+
+    function selectTicker(sym, name) {
+      state.assets[idx].ticker = sym;
+      state.assets[idx].name = name || sym;
+      input.value = sym;
+      if (nameEl) nameEl.textContent = name || sym;
+      clearBtn.style.display = sym ? 'block' : 'none';
+      dropdown.classList.remove('active');
+      syncLegacyEtfState();
+      updateSeasonRatioUI();
+      if (idx <= 1) fetchDateRange();
+    }
+
+    function renderDropdown(items) {
+      if (!items || items.length === 0) {
+        dropdown.innerHTML = `<div class="dropdown-item" style="color: #64748b; font-size: 0.8rem;">검색 결과가 없습니다.</div>`;
+        dropdown.classList.add('active');
+        return;
+      }
+      dropdown.innerHTML = items.map(item => `
+        <div class="dropdown-item" data-sym="${item.symbol}" data-name="${item.name}" data-cat="${item.category}">
+          <div class="dropdown-item-left">
+            <span class="dropdown-symbol">${item.symbol}</span>
+            <span class="dropdown-name" title="${item.name}">${item.name}</span>
+          </div>
+          <span class="dropdown-badge">${item.category}</span>
+        </div>
+      `).join('');
+      dropdown.classList.add('active');
+
+      dropdown.querySelectorAll('.dropdown-item').forEach(elItem => {
+        elItem.addEventListener('click', () => {
+          selectTicker(elItem.dataset.sym, elItem.dataset.name);
+        });
+      });
+    }
+
+    input.addEventListener('focus', () => search(input.value.trim()));
+    input.addEventListener('input', (e) => {
+      const q = e.target.value.trim();
+      clearBtn.style.display = q ? 'block' : 'none';
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => search(q), 250);
     });
-  });
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      clearBtn.style.display = 'none';
+      input.focus();
+      search('');
+    });
+    document.addEventListener('click', (e) => {
+      if (!card.contains(e.target)) {
+        dropdown.classList.remove('active');
+      }
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const first = dropdown.querySelector('.dropdown-item');
+        if (first && first.dataset.sym) {
+          selectTicker(first.dataset.sym, first.dataset.name);
+        } else if (input.value.trim()) {
+          const sym = input.value.trim().toUpperCase();
+          selectTicker(sym, sym);
+        }
+      }
+    });
+  }
+
+  function renderSeasonAssets(focusIdx = -1) {
+    if (!el.seasonAssetsGrid) return;
+    el.seasonAssetsGrid.innerHTML = '';
+
+    state.assets.forEach((asset, idx) => {
+      const color = SEASON_ASSET_COLORS[idx % SEASON_ASSET_COLORS.length];
+      const card = document.createElement('div');
+      card.className = 'perm-asset-card season-asset-card';
+      card.style.borderLeft = `3px solid ${color}`;
+
+      const canRemove = state.assets.length > 2 && idx >= 2;
+      card.innerHTML = `
+        <div class="season-card-top">
+          <div class="season-search-col">
+            <div class="search-input-wrapper">
+              <i class="fa-solid fa-magnifying-glass search-icon"></i>
+              <input type="text" class="ticker-search-input season-ticker-input" value="${asset.ticker || ''}" placeholder="티커 또는 종목명 검색..." autocomplete="off">
+              <button type="button" class="btn-clear-search" style="display:${asset.ticker ? 'block' : 'none'};" title="초기화">&times;</button>
+            </div>
+            <div class="ticker-dropdown"></div>
+            <span class="season-asset-name">${asset.name || '종목을 검색하세요'}</span>
+          </div>
+          <div class="season-weight-col">
+            <input type="number" class="season-weight-input" min="0" max="100" step="0.5" value="${asset.weight}">
+            <span class="pct-symbol">%</span>
+            ${canRemove ? '<button type="button" class="btn-remove-asset" title="종목 제거">&times;</button>' : ''}
+          </div>
+        </div>
+        <input type="range" class="asset-slider season-slider" min="0" max="100" step="0.5" value="${asset.weight}" style="accent-color:${color};">
+      `;
+
+      const numInp = card.querySelector('.season-weight-input');
+      const sliderInp = card.querySelector('.season-slider');
+      const delBtn = card.querySelector('.btn-remove-asset');
+
+      numInp.addEventListener('input', () => {
+        const val = Math.max(0, Math.min(100, parseFloat(numInp.value) || 0));
+        state.assets[idx].weight = val;
+        sliderInp.value = val;
+        updateSeasonRatioUI();
+      });
+
+      sliderInp.addEventListener('input', () => {
+        const val = parseFloat(sliderInp.value) || 0;
+        state.assets[idx].weight = val;
+        numInp.value = val;
+        updateSeasonRatioUI();
+      });
+
+      if (delBtn) {
+        delBtn.addEventListener('click', () => {
+          state.assets.splice(idx, 1);
+          renderSeasonAssets();
+        });
+      }
+
+      attachSeasonCardSearch(card, idx);
+      el.seasonAssetsGrid.appendChild(card);
+
+      if (idx === focusIdx) {
+        const searchInp = card.querySelector('.season-ticker-input');
+        if (searchInp) searchInp.focus();
+      }
+    });
+
+    updateSeasonRatioUI();
+  }
+
+  function normalizeSeasonWeights() {
+    const n = state.assets.length;
+    if (n === 0) return;
+
+    const total = state.assets.reduce((acc, a) => acc + Math.max(0, parseFloat(a.weight) || 0), 0);
+    let allocated = 0;
+
+    if (total <= 0) {
+      const even = Math.round((100 / n) * 10) / 10;
+      state.assets.forEach((a, idx) => {
+        if (idx === n - 1) {
+          a.weight = Math.round((100 - allocated) * 10) / 10;
+        } else {
+          a.weight = even;
+          allocated += even;
+        }
+      });
+    } else {
+      state.assets.forEach((a, idx) => {
+        if (idx === n - 1) {
+          a.weight = Math.max(0, Math.round((100 - allocated) * 10) / 10);
+        } else {
+          const scaled = Math.round(((Math.max(0, parseFloat(a.weight) || 0) / total) * 100) * 10) / 10;
+          a.weight = scaled;
+          allocated += scaled;
+        }
+      });
+    }
+
+    renderSeasonAssets();
+  }
+
+  if (el.btnAddSeasonAsset) {
+    el.btnAddSeasonAsset.addEventListener('click', () => {
+      if (state.assets.length >= 8) {
+        alert('최대 8개 종목까지 추가할 수 있습니다.');
+        return;
+      }
+      state.assets.push({ ticker: '', name: '종목을 검색하세요', weight: 0 });
+      renderSeasonAssets(state.assets.length - 1);
+    });
+  }
+
+  if (el.btnSeasonNormalize) {
+    el.btnSeasonNormalize.addEventListener('click', normalizeSeasonWeights);
+  }
 
   // ── 자본금 및 적립금 입력창 연동 ──
   el.initCap.addEventListener('input', (e) => {
@@ -655,143 +834,20 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePeriodPreview();
   });
 
-  // ── 티커 로드 및 검색 바 초기화 ──
+  // ── 티커 로드 및 카드형 멀티 자산 UI 초기화 ──
   async function loadTickers() {
     try {
       const res = await fetch('/api/tickers');
       const data = await res.json();
       state.tickerDetails = data.details || {};
-
-      el.etf1SearchInput.value = state.etf1;
-      el.etf2SearchInput.value = state.etf2;
-
-      updateEtfDetails(1, state.etf1);
-      updateEtfDetails(2, state.etf2);
-      setRatios(50);
+      state.assets.forEach(a => {
+        const info = state.tickerDetails[a.ticker];
+        if (info) a.name = info.name_kr || info.name || a.ticker;
+      });
     } catch (err) {
       console.error('티커 로드 실패:', err);
     }
-  }
-
-  function updateEtfDetails(num, ticker, info = null) {
-    if (!info) {
-      info = state.tickerDetails[ticker] || { name_kr: ticker, category: '종목/ETF' };
-    }
-
-    if (num === 1) {
-      state.etf1 = ticker;
-      el.etf1SearchInput.value = ticker;
-      el.etf1Badge.textContent = `${info.name_kr || info.name || ''} (${info.category || '종목'})`;
-      el.inputEtf1Ticker.textContent = ticker;
-      el.sliderEtf1Label.textContent = `${ticker}: ${state.etf1_ratio}%`;
-    } else {
-      state.etf2 = ticker;
-      el.etf2SearchInput.value = ticker;
-      el.etf2Badge.textContent = `${info.name_kr || info.name || ''} (${info.category || '종목'})`;
-      el.inputEtf2Ticker.textContent = ticker;
-      el.sliderEtf2Label.textContent = `${ticker}: ${state.etf2_ratio}%`;
-    }
-
-    el.ratioSummary.textContent = `${state.etf1} ${state.etf1_ratio}% : ${state.etf2} ${state.etf2_ratio}%`;
-    fetchDateRange();
-  }
-
-  // ── 🌟 신규: Yahoo Finance 티커 검색 자동완성 셋업 🌟 ──
-  function setupTickerSearch(num) {
-    const input = num === 1 ? el.etf1SearchInput : el.etf2SearchInput;
-    const dropdown = num === 1 ? el.etf1Dropdown : el.etf2Dropdown;
-    const clearBtn = num === 1 ? el.etf1ClearBtn : el.etf2ClearBtn;
-
-    let debounceTimer = null;
-
-    async function search(q) {
-      try {
-        const res = await fetch(`/api/search_ticker?q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        if (data.status === 'success') {
-          renderDropdown(data.results);
-        }
-      } catch (e) {
-        console.warn('검색 에러:', e);
-      }
-    }
-
-    function renderDropdown(items) {
-      if (!items || items.length === 0) {
-        dropdown.innerHTML = `<div class="dropdown-item" style="color: #64748b; font-size: 0.8rem;">검색 결과가 없습니다.</div>`;
-        dropdown.classList.add('active');
-        return;
-      }
-
-      let html = '';
-      items.forEach(item => {
-        html += `
-          <div class="dropdown-item" data-sym="${item.symbol}" data-name="${item.name}" data-cat="${item.category}">
-            <div class="dropdown-item-left">
-              <span class="dropdown-symbol">${item.symbol}</span>
-              <span class="dropdown-name" title="${item.name}">${item.name}</span>
-            </div>
-            <span class="dropdown-badge">${item.category}</span>
-          </div>
-        `;
-      });
-
-      dropdown.innerHTML = html;
-      dropdown.classList.add('active');
-
-      dropdown.querySelectorAll('.dropdown-item').forEach(elItem => {
-        elItem.addEventListener('click', () => {
-          const sym = elItem.dataset.sym;
-          const name = elItem.dataset.name;
-          const cat = elItem.dataset.cat;
-          updateEtfDetails(num, sym, { name_kr: name, category: cat });
-          dropdown.classList.remove('active');
-          clearBtn.style.display = 'block';
-        });
-      });
-    }
-
-    input.addEventListener('focus', () => {
-      search(input.value.trim());
-    });
-
-    input.addEventListener('input', (e) => {
-      const q = e.target.value.trim();
-      clearBtn.style.display = q ? 'block' : 'none';
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        search(q);
-      }, 250);
-    });
-
-    clearBtn.addEventListener('click', () => {
-      input.value = '';
-      clearBtn.style.display = 'none';
-      input.focus();
-      search('');
-    });
-
-    // 외부 클릭 시 드롭다운 닫기
-    document.addEventListener('click', (e) => {
-      if (!input.contains(e.target) && !dropdown.contains(e.target) && !clearBtn.contains(e.target)) {
-        dropdown.classList.remove('active');
-      }
-    });
-
-    // 엔터키 입력 시 최상단 아이템 또는 직접 입력 티커 선택
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const first = dropdown.querySelector('.dropdown-item');
-        if (first && first.dataset.sym) {
-          updateEtfDetails(num, first.dataset.sym, { name_kr: first.dataset.name, category: first.dataset.cat });
-        } else if (input.value.trim()) {
-          const sym = input.value.trim().toUpperCase();
-          updateEtfDetails(num, sym, { name_kr: sym, category: '직접입력' });
-        }
-        dropdown.classList.remove('active');
-      }
-    });
+    renderSeasonAssets();
   }
 
   // ── 🌟 리밸런싱 주기 설정 핸들러 (1 ~ 360개월 지원) 🌟 ──
@@ -897,6 +953,18 @@ async function pollStatusUntilReady(maxAttempts = 30) {
 
   // ── 백테스트 실행 ──
   async function runBacktest() {
+    const emptyAsset = state.assets.find(a => !a.ticker || !a.ticker.trim());
+    if (emptyAsset) {
+      alert('티커가 비어 있는 종목 카드가 있습니다. 종목을 검색하거나 카드를 삭제해 주세요.');
+      return;
+    }
+
+    const totalWeight = state.assets.reduce((acc, a) => acc + (parseFloat(a.weight) || 0), 0);
+    if (Math.abs(totalWeight - 100) >= 0.05) {
+      alert(`자산 배분 비중의 합계가 100%여야 합니다. (현재: ${Math.round(totalWeight * 10) / 10}%)\n[✨ 100% 자동 맞춤] 버튼을 눌러주세요.`);
+      return;
+    }
+
     if (!state.isDataReady) {
       showLoading('Yahoo Finance 데이터를 준비하고 있습니다...');
       const ready = await checkDataStatus();
@@ -908,7 +976,9 @@ async function pollStatusUntilReady(maxAttempts = 30) {
 
     showLoading('계절성 스위칭 백테스트 및 퀀트 지표 연산 중...');
 
+    syncLegacyEtfState();
     const payload = {
+      assets: state.assets.map(a => ({ ticker: a.ticker.trim().toUpperCase(), weight: Number(a.weight) || 0 })),
       etf1: state.etf1,
       etf2: state.etf2,
       etf1_ratio: state.etf1_ratio,
@@ -952,7 +1022,7 @@ async function pollStatusUntilReady(maxAttempts = 30) {
     const bh = metrics.buy_and_hold;
 
     // 1. 상단 인포 바
-    el.infoPortfolio.textContent = `${info.etf1} (${info.etf1_ratio}%) + ${info.etf2} (${info.etf2_ratio}%)`;
+    el.infoPortfolio.textContent = info.portfolio_label || `${info.etf1} (${info.etf1_ratio}%) + ${info.etf2} (${info.etf2_ratio}%)`;
     const mStr = info.season_months.length > 0 ? info.season_months.join(', ') + '월' : '없음 (전량 안전자산)';
     el.infoSeasonMonths.textContent = `${mStr} (총 ${info.season_months.length}개월)`;
     el.infoRebal.textContent = `${info.rebal_months || 1}개월 주기 (계절성: ${info.total_rebalances_strat || 0}회 / B&H: ${info.total_rebalances_bh || 0}회)`;
@@ -1194,7 +1264,7 @@ async function pollStatusUntilReady(maxAttempts = 30) {
             tension: 0.1
           },
           {
-            label: 'Buy & Hold 단순 보유',
+            label: state.latestResult?.info?.portfolio_label ? `Buy & Hold (${state.latestResult.info.portfolio_label})` : 'Buy & Hold 단순 보유',
             data: chartData.bh_val,
             borderColor: '#f43f5e',
             backgroundColor: 'transparent',
@@ -3549,6 +3619,136 @@ async function pollStatusUntilReady(maxAttempts = 30) {
     renderChecklistRows(document.getElementById('clSellTableBody'), sellItems);
   }
 
+  // ════════════════════════════════════════════════════════════
+  // 🌟 공통 AI 분석 채팅 모듈 마운트 (탭 1~4) 🌟
+  // ════════════════════════════════════════════════════════════
+  function bindSubTabSwitch(tabsId, tablePaneId, aiPaneId) {
+    const tabs = document.getElementById(tabsId);
+    const tablePane = document.getElementById(tablePaneId);
+    const aiPane = document.getElementById(aiPaneId);
+    if (!tabs || !tablePane || !aiPane) return;
+
+    tabs.querySelectorAll('.ai-subtab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabs.querySelectorAll('.ai-subtab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const mode = btn.dataset.subtab || 'table';
+        tablePane.style.display = mode === 'table' ? 'block' : 'none';
+        aiPane.style.display = mode === 'ai' ? 'block' : 'none';
+      });
+    });
+  }
+
+  function setupAiAnalysts() {
+    bindSubTabSwitch('seasonSubTabs', 'seasonSubPaneTable', 'seasonAiChatContainer');
+    bindSubTabSwitch('dynSubTabs', 'dynSubPaneTable', 'dynAiChatContainer');
+
+    if (!window.QuantAiChat) return;
+
+    // 1. ETF 계절성 스위칭 터미널
+    window.QuantAiChat.mount('seasonAiChatContainer', {
+      tabKey: 'seasonality',
+      tabName: 'ETF 계절성 스위칭 터미널',
+      suggestions: [
+        '현재 결과의 핵심 리스크와 MDD 방어법 분석',
+        '수익률 대비 샤프지수를 높일 비중 조정 제안',
+        '계절성 보유 월 조합을 개선할 아이디어 제안'
+      ],
+      getContextSummary: () => {
+        const assetsTxt = (state.assets || []).map(a => `${a.ticker}(${a.weight}%)`).join(' + ');
+        const monthsTxt = (state.season_months || []).join(', ') + '월';
+        const lines = [
+          `[포트폴리오] ${assetsTxt}`,
+          `[보유 월] ${monthsTxt} (리밸런싱 ${state.rebal_months}개월 주기, 기간 ${state.start_date} ~ ${state.end_date || '최신'})`
+        ];
+        if (state.latestResult && state.latestResult.metrics) {
+          const st = state.latestResult.metrics.strategy || {};
+          const bh = state.latestResult.metrics.buy_and_hold || {};
+          lines.push(`[계절성 전략] TR:${st.tr_pct}%, CAGR:${st.cagr_pct}%, MDD:${st.mdd_pct}%, Sharpe:${st.sharpe_ratio}, MAR:${st.mar_ratio}, 승률:${st.win_rate_pct}%`);
+          lines.push(`[Buy & Hold] TR:${bh.tr_pct}%, CAGR:${bh.cagr_pct}%, MDD:${bh.mdd_pct}%, Sharpe:${bh.sharpe_ratio}`);
+          const annual = (state.latestResult.annual_results || []).slice(-10);
+          if (annual.length > 0) {
+            lines.push('[최근 연도별 성과] ' + annual.map(y => `${y.year}년(전략 ${y.strat_ret_pct}% / BH ${y.bh_ret_pct}%)`).join(', '));
+          }
+        }
+        return lines.join('\n');
+      }
+    });
+
+    // 2. 영구 포트폴리오
+    window.QuantAiChat.mount('permAiChatContainer', {
+      tabKey: 'permanent',
+      tabName: '영구 포트폴리오',
+      suggestions: [
+        '현재 결과의 핵심 리스크와 MDD 방어법 분석',
+        '수익률 대비 샤프지수를 높일 비중 조정 제안',
+        '인플레이션·금리 상승기 대비 자산 배분 점검'
+      ],
+      getContextSummary: () => {
+        const p = state.perm;
+        const lines = [
+          `[자산 비중] 주식(SPY):${p.w_spy}%, 장기채(TLT):${p.w_tlt}%, 금(GLD):${p.w_gld}%, 현금(BIL):${p.w_bil}%`,
+          `[리밸런싱] ${p.rebal_months}개월 주기`
+        ];
+        if (p.latestResult && p.latestResult.metrics) {
+          const m = p.latestResult.metrics.strategy || p.latestResult.metrics.permanent || p.latestResult.metrics;
+          lines.push(`[성과 지표] CAGR:${m.cagr_pct ?? '-'}%, MDD:${m.mdd_pct ?? '-'}%, Sharpe:${m.sharpe_ratio ?? '-'}, MAR:${m.mar_ratio ?? '-'}`);
+        }
+        return lines.join('\n');
+      }
+    });
+
+    // 3. 올웨더 포트폴리오
+    window.QuantAiChat.mount('awAiChatContainer', {
+      tabKey: 'allweather',
+      tabName: '올웨더 포트폴리오',
+      suggestions: [
+        '현재 결과의 핵심 리스크와 MDD 방어법 분석',
+        '수익률 대비 샤프지수를 높일 비중 조정 제안',
+        '장기채·원자재·주식 균형 측면의 개선점 분석'
+      ],
+      getContextSummary: () => {
+        const a = state.aw;
+        const lines = [
+          `[자산 비중] 주식(SPY):${a.w_spy}%, 장기채(TLT):${a.w_tlt}%, 중기채(IEF):${a.w_ief}%, 금(GLD):${a.w_gld}%, 원자재(DBC):${a.w_dbc}%`,
+          `[리밸런싱] ${a.rebal_months}개월 주기`
+        ];
+        if (a.latestResult && a.latestResult.metrics) {
+          const m = a.latestResult.metrics.strategy || a.latestResult.metrics.allweather || a.latestResult.metrics;
+          lines.push(`[성과 지표] CAGR:${m.cagr_pct ?? '-'}%, MDD:${m.mdd_pct ?? '-'}%, Sharpe:${m.sharpe_ratio ?? '-'}, MAR:${m.mar_ratio ?? '-'}`);
+        }
+        return lines.join('\n');
+      }
+    });
+
+    // 4. 동적 자산 배분
+    window.QuantAiChat.mount('dynAiChatContainer', {
+      tabKey: 'dynamic',
+      tabName: '동적 자산 배분',
+      suggestions: [
+        '현재 결과의 핵심 리스크와 MDD 방어법 분석',
+        '수익률 대비 샤프지수를 높일 전략/벤치마크 제안',
+        '6대 경제 위기 구간 방어력(Alpha) 평가'
+      ],
+      getContextSummary: () => {
+        const d = state.dynamic;
+        const lines = [
+          `[전략 설정] 전략=${d.strategy}, 벤치마크=${d.benchmark}, 기간=${d.start_date} ~ ${d.end_date || '최신'}`
+        ];
+        if (d.latestResult && d.latestResult.metrics) {
+          const st = d.latestResult.metrics.strategy || d.latestResult.metrics;
+          const bm = d.latestResult.metrics.benchmark || {};
+          lines.push(`[백테스트 성과] 전략 CAGR:${st.cagr_pct ?? '-'}%, MDD:${st.mdd_pct ?? '-'}%, Sharpe:${st.sharpe_ratio ?? '-'} | BM CAGR:${bm.cagr_pct ?? '-'}%, MDD:${bm.mdd_pct ?? '-'}%`);
+          const crises = d.latestResult.crisis_analysis || [];
+          if (crises.length > 0) {
+            lines.push('[6대 위기 구간 방어] ' + crises.map(c => `${c.name}(전략 ${c.strat_ret}% vs BM ${c.bm_ret}%, 방어알파 ${c.alpha}%p)`).join(' | '));
+          }
+        }
+        return lines.join('\n');
+      }
+    });
+  }
+
   // ── 초기화 실행 시퀀스 ──
   async function init() {
     setupTabNavigation();
@@ -3557,10 +3757,9 @@ async function pollStatusUntilReady(maxAttempts = 30) {
     setupAllWeatherControls();
     initAwMonthsGrid();
     setupDynamicControls();
+    setupAiAnalysts();
 
     initMonthsGrid();
-    setupTickerSearch(1);
-    setupTickerSearch(2);
     setRebalMonths(1);
     await loadTickers();
     await fetchDateRange();

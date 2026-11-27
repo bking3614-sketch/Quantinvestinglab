@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="custom_quant.css">
   <link rel="stylesheet" href="chart_game.css">
+  <link rel="stylesheet" href="ai_chat.css">
 </head>
 <body>
   <div class="app-container">
@@ -127,88 +128,30 @@
 
           <div class="divider"></div>
 
-          <!-- 3. 투자 대상 ETF / 종목 검색 및 선택 (Yahoo Finance 검색 연동) -->
+          <!-- 3. 자산 배분 비중 (카드형 슬라이더 UI + 종목 추가/삭제) -->
           <div class="form-group">
-            <div class="label-row">
-              <label><i class="fa-solid fa-magnifying-glass-chart"></i> 종목 / ETF 검색 및 선택 (2종)</label>
-              <span class="sub-badge" style="font-size: 0.7rem;"><i class="fa-brands fa-yahoo text-warning"></i> 야후 파이낸스 검색</span>
+            <div class="season-alloc-header">
+              <label><i class="fa-solid fa-layer-group"></i> 자산 배분 비중 (합계 100%)</label>
+              <div class="season-header-actions">
+                <span class="season-sum-badge valid" id="seasonSumBadge">합계: 100%</span>
+                <button type="button" class="btn-add-asset" id="btnAddSeasonAsset" title="종목 카드 추가 (최대 8개)">
+                  <i class="fa-solid fa-plus"></i> 종목 추가
+                </button>
+              </div>
             </div>
-            <p class="field-desc" style="margin-bottom: 6px;">
-              티커(TQQQ, SOXL, 005930.KS) 또는 종목명(삼성전자, SK하이닉스 등)을 검색하세요.
+            <p class="field-desc" style="margin-bottom: 8px;">
+              티커(SOXL, TQQQ, 005930.KS) 또는 종목명을 검색하고 슬라이더로 비중을 조절하세요. (최소 2개 ~ 최대 8개)
             </p>
-            <div class="etf-select-grid">
-              <!-- 종목 1 검색창 -->
-              <div class="select-box ticker-search-box">
-                <span class="sub-label">자산 1 (기본: SOXL)</span>
-                <div class="search-input-wrapper">
-                  <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                  <input type="text" id="etf1SearchInput" class="ticker-search-input" placeholder="티커 또는 종목명 검색..." autocomplete="off">
-                  <button type="button" class="btn-clear-search" id="etf1ClearBtn" title="초기화">&times;</button>
-                </div>
-                <div class="ticker-dropdown" id="etf1Dropdown"></div>
-                <div class="etf-badge" id="etf1Badge">필라델피아 반도체 3X</div>
-              </div>
 
-              <!-- 종목 2 검색창 -->
-              <div class="select-box ticker-search-box">
-                <span class="sub-label">자산 2 (기본: TQQQ)</span>
-                <div class="search-input-wrapper">
-                  <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                  <input type="text" id="etf2SearchInput" class="ticker-search-input" placeholder="티커 또는 종목명 검색..." autocomplete="off">
-                  <button type="button" class="btn-clear-search" id="etf2ClearBtn" title="초기화">&times;</button>
-                </div>
-                <div class="ticker-dropdown" id="etf2Dropdown"></div>
-                <div class="etf-badge" id="etf2Badge">나스닥100 3X</div>
-              </div>
-            </div>
-          </div>
+            <!-- 동적 종목 카드 리스트 -->
+            <div class="four-assets-grid season-assets-grid" id="seasonAssetsGrid"></div>
 
-          <!-- 4. ETF 보유 비중 직접 설정 (TQQQ 등 개별 비중 직접 입력 & 슬라이더 양방향 연동) -->
-          <div class="form-group">
-            <div class="label-row">
-              <label for="ratioSlider"><i class="fa-solid fa-scale-balanced"></i> ETF 비중 직접 설정 (%)</label>
-              <span class="val-preview highlight" id="ratioSummary">SOXL 50% : TQQQ 50%</span>
-            </div>
-
-            <!-- 개별 비중 직접 숫자 입력창 2개 -->
-            <div class="dual-ratio-inputs">
-              <div class="ratio-input-card">
-                <span class="ticker-tag" id="inputEtf1Ticker">SOXL</span>
-                <div class="input-pct-wrapper">
-                  <input type="number" id="etf1RatioInput" min="0" max="100" value="50" step="1">
-                  <span class="pct-symbol">%</span>
-                </div>
-              </div>
-              <div class="ratio-separator">:</div>
-              <div class="ratio-input-card">
-                <span class="ticker-tag" id="inputEtf2Ticker">TQQQ</span>
-                <div class="input-pct-wrapper">
-                  <input type="number" id="etf2RatioInput" min="0" max="100" value="50" step="1">
-                  <span class="pct-symbol">%</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- 퀵 비중 프리셋 버튼들 -->
-            <div class="quick-ratio-buttons">
-              <button type="button" class="btn-quick-ratio" data-r1="50">50 : 50</button>
-              <button type="button" class="btn-quick-ratio" data-r1="70">70 : 30</button>
-              <button type="button" class="btn-quick-ratio" data-r1="30">30 : 70</button>
-              <button type="button" class="btn-quick-ratio" data-r1="100">100 : 0</button>
-              <button type="button" class="btn-quick-ratio" data-r1="0">0 : 100</button>
-            </div>
-
-            <!-- 슬라이더 & 비중 게이지 바 -->
-            <div class="slider-container">
-              <input type="range" id="ratioSlider" min="0" max="100" value="50" step="1">
-              <div class="ratio-bar">
-                <div class="ratio-fill-1" id="ratioFill1" style="width: 50%;"></div>
-                <div class="ratio-fill-2" id="ratioFill2" style="width: 50%;"></div>
-              </div>
-              <div class="ratio-labels">
-                <span id="sliderEtf1Label">SOXL: 50%</span>
-                <span id="sliderEtf2Label">TQQQ: 50%</span>
-              </div>
+            <!-- 다중 색상 비율 바 & 100% 자동 맞춤 -->
+            <div class="perm-bar-wrapper" style="margin-top: 10px;">
+              <div class="perm-bar" id="seasonRatioBar"></div>
+              <button type="button" class="btn-normalize" id="btnSeasonNormalize">
+                ✨ 100% 자동 맞춤
+              </button>
             </div>
           </div>
 
@@ -517,32 +460,42 @@
           </div>
         </section>
 
-        <!-- 하단: 연도별 성과 상세 테이블 -->
+        <!-- 하단: 연도별 성과 상세 테이블 & AI 분석 서브탭 -->
         <section class="table-panel">
           <div class="table-header">
-            <h3><i class="fa-solid fa-table-list"></i> 연도별 백테스트 상세 성과표</h3>
+            <div class="ai-subtabs" id="seasonSubTabs">
+              <button type="button" class="ai-subtab-btn active" data-subtab="table">
+                <i class="fa-solid fa-table-list"></i> 연도별 백테스트 상세 성과표
+              </button>
+              <button type="button" class="ai-subtab-btn" data-subtab="ai">
+                ✨ AI 분석
+              </button>
+            </div>
             <span class="table-tag">Annual Performance & MDD Breakdown</span>
           </div>
-          <div class="table-responsive">
-            <table class="quant-table" id="annualTable">
-              <thead>
-                <tr>
-                  <th>연도</th>
-                  <th>계절성 스위칭 수익률</th>
-                  <th>Buy & Hold 수익률</th>
-                  <th>초과 알파 (Alpha)</th>
-                  <th>계절성 연간 MDD</th>
-                  <th>Buy & Hold 연간 MDD</th>
-                  <th>계절성 연말 자산</th>
-                  <th>Buy & Hold 연말 자산</th>
-                  <th>누적 원금</th>
-                </tr>
-              </thead>
-              <tbody>
-                <!-- JS 렌더링 -->
-              </tbody>
-            </table>
+          <div id="seasonSubPaneTable">
+            <div class="table-responsive">
+              <table class="quant-table" id="annualTable">
+                <thead>
+                  <tr>
+                    <th>연도</th>
+                    <th>계절성 스위칭 수익률</th>
+                    <th>Buy & Hold 수익률</th>
+                    <th>초과 알파 (Alpha)</th>
+                    <th>계절성 연간 MDD</th>
+                    <th>Buy & Hold 연간 MDD</th>
+                    <th>계절성 연말 자산</th>
+                    <th>Buy & Hold 연말 자산</th>
+                    <th>누적 원금</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- JS 렌더링 -->
+                </tbody>
+              </table>
+            </div>
           </div>
+          <div id="seasonAiChatContainer" style="display: none;"></div>
         </section>
       </main>
     </div>
@@ -934,6 +887,9 @@
               <canvas id="permDrawdownChart"></canvas>
             </div>
           </section>
+
+          <!-- 영구 포트폴리오 AI 분석 패널 -->
+          <section id="permAiChatContainer"></section>
         </main>
       </div>
     </div><!-- /panePermanent -->
@@ -1337,6 +1293,9 @@
               <canvas id="awDrawdownChart"></canvas>
             </div>
           </section>
+
+          <!-- 올웨더 포트폴리오 AI 분석 패널 -->
+          <section id="awAiChatContainer"></section>
         </main>
       </div>
     </div><!-- /paneAllWeather -->
@@ -1659,33 +1618,43 @@
             </div>
           </section>
 
-          <!-- 6대 역사적 경제 위기 구간 방어력 분석 테이블 -->
+          <!-- 6대 역사적 경제 위기 구간 방어력 분석 테이블 & AI 분석 서브탭 -->
           <section class="chart-panel" style="margin-top: 24px;">
             <div class="chart-header">
               <div class="chart-title-area">
-                <h3><i class="fa-solid fa-shield-halved"></i> 6대 역사적 경제 위기 구간 방어력 분석 (Crisis Defense Alpha)</h3>
-                <p class="chart-subtitle">각 위기 구간에서 동적 전략이 벤치마크 대비 얼마나 손실을 줄이고 알파(초과수익)를 창출했는지 검증</p>
+                <div class="ai-subtabs" id="dynSubTabs">
+                  <button type="button" class="ai-subtab-btn active" data-subtab="table">
+                    <i class="fa-solid fa-shield-halved"></i> 6대 역사적 경제 위기 구간 방어력 분석 (Crisis Defense Alpha)
+                  </button>
+                  <button type="button" class="ai-subtab-btn" data-subtab="ai">
+                    ✨ AI 분석
+                  </button>
+                </div>
+                <p class="chart-subtitle" style="margin-top: 8px;">각 위기 구간에서 동적 전략이 벤치마크 대비 얼마나 손실을 줄이고 알파(초과수익)를 창출했는지 검증</p>
               </div>
             </div>
-            <div class="crisis-table-container">
-              <table class="crisis-table">
-                <thead>
-                  <tr>
-                    <th>위기 구간</th>
-                    <th>기간</th>
-                    <th>위기 성격</th>
-                    <th>전략 수익률</th>
-                    <th>벤치마크 수익률</th>
-                    <th>전략 MDD</th>
-                    <th>벤치마크 MDD</th>
-                    <th>방어 알파 (Alpha)</th>
-                  </tr>
-                </thead>
-                <tbody id="dynCrisisTableBody">
-                  <!-- JS populated -->
-                </tbody>
-              </table>
+            <div id="dynSubPaneTable">
+              <div class="crisis-table-container">
+                <table class="crisis-table">
+                  <thead>
+                    <tr>
+                      <th>위기 구간</th>
+                      <th>기간</th>
+                      <th>위기 성격</th>
+                      <th>전략 수익률</th>
+                      <th>벤치마크 수익률</th>
+                      <th>전략 MDD</th>
+                      <th>벤치마크 MDD</th>
+                      <th>방어 알파 (Alpha)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dynCrisisTableBody">
+                    <!-- JS populated -->
+                  </tbody>
+                </table>
+              </div>
             </div>
+            <div id="dynAiChatContainer" style="display: none;"></div>
           </section>
         </main>
       </div>
@@ -2421,12 +2390,16 @@
             </div>
           </div>
 
-          <!-- 라이브 스크리닝 종목 테이블 -->
+          <!-- 라이브 스크리닝 종목 테이블 & AI 분석 서브탭 -->
           <div class="cq-table-card">
             <div class="cq-table-header">
-              <div class="cq-chart-title">
-                <i class="fa-solid fa-list-ol text-primary"></i>
-                <span>조건 부합 라이브 스크리닝 선정 종목</span>
+              <div class="ai-subtabs" id="cqTableSubTabs">
+                <button type="button" class="ai-subtab-btn active" data-subtab="table">
+                  <i class="fa-solid fa-list-ol"></i> 조건 부합 라이브 스크리닝 선정 종목
+                </button>
+                <button type="button" class="ai-subtab-btn" data-subtab="ai">
+                  ✨ AI 분석
+                </button>
               </div>
               <div class="cq-table-header-actions">
                 <label class="cq-alloc-toggle" title="투자 원금을 편입 종목 수로 나눈 목표 비중(%)과 배분 금액을 표시합니다">
@@ -2436,34 +2409,37 @@
                 <span class="cq-table-count" id="cqScreeningCount">총 0개 종목 편입</span>
               </div>
             </div>
-            <div class="cq-table-scroll">
-              <table class="cq-table">
-                <thead>
-                  <tr>
-                    <th>순위</th>
-                    <th>티커</th>
-                    <th>종목명</th>
-                    <th>업종</th>
-                    <th>복합 점수</th>
-                    <th>PER</th>
-                    <th>PBR</th>
-                    <th>ROE</th>
-                    <th>12M 모멘텀</th>
-                    <th>시가총액</th>
-                    <th class="cq-alloc-col" style="display: none;">목표 비중</th>
-                    <th class="cq-alloc-col" style="display: none;">배분 금액</th>
-                    <th>분석</th>
-                  </tr>
-                </thead>
-                <tbody id="cqScreeningTableBody">
-                  <tr>
-                    <td colspan="11" style="text-align: center; color: var(--text-secondary); padding: 24px;">
-                      [현재 조건 종목 스크리닝] 또는 [전략 백테스트 실행] 버튼을 클릭하세요.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div id="cqSubPaneTable">
+              <div class="cq-table-scroll">
+                <table class="cq-table">
+                  <thead>
+                    <tr>
+                      <th>순위</th>
+                      <th>티커</th>
+                      <th>종목명</th>
+                      <th>업종</th>
+                      <th>복합 점수</th>
+                      <th>PER</th>
+                      <th>PBR</th>
+                      <th>ROE</th>
+                      <th>12M 모멘텀</th>
+                      <th>시가총액</th>
+                      <th class="cq-alloc-col" style="display: none;">목표 비중</th>
+                      <th class="cq-alloc-col" style="display: none;">배분 금액</th>
+                      <th>분석</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cqScreeningTableBody">
+                    <tr>
+                      <td colspan="11" style="text-align: center; color: var(--text-secondary); padding: 24px;">
+                        [현재 조건 종목 스크리닝] 또는 [전략 백테스트 실행] 버튼을 클릭하세요.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
+            <div id="cqAiChatContainer" style="display: none; padding: 14px;"></div>
           </div>
         </main>
       </div>
@@ -3457,6 +3433,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="auth.js"></script>
+  <script src="ai_chat.js"></script>
   <script src="app.js"></script>
   <script src="custom_quant.js"></script>
   <script src="chart_game.js"></script>
@@ -3519,6 +3496,53 @@
         </svg>
         <span>Google로 로그인</span>
       </button>
+    </div>
+  </div>
+
+  <!-- 전역 AI API 설정 모달 -->
+  <div id="aiSettingsModal" class="ai-settings-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="aiSettingsTitle">
+    <div class="ai-settings-card">
+      <div class="ai-settings-header">
+        <h3 id="aiSettingsTitle"><i class="fa-solid fa-gear text-primary"></i> AI 애널리스트 API 설정</h3>
+        <button type="button" class="sb-login-close" id="aiBtnCloseSettings" aria-label="닫기" style="position: static;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="ai-settings-field">
+        <label>AI 서비스 제공자</label>
+        <div class="ai-provider-radios">
+          <label class="ai-provider-radio active">
+            <input type="radio" name="aiProviderRadio" value="gemini" checked>
+            <span>Google Gemini</span>
+          </label>
+          <label class="ai-provider-radio">
+            <input type="radio" name="aiProviderRadio" value="openai">
+            <span>OpenAI (ChatGPT)</span>
+          </label>
+          <label class="ai-provider-radio">
+            <input type="radio" name="aiProviderRadio" value="anthropic">
+            <span>Anthropic (Claude)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="ai-settings-field">
+        <label for="aiModelSelect">모델 선택</label>
+        <select id="aiModelSelect" class="ai-settings-select"></select>
+      </div>
+
+      <div class="ai-settings-field">
+        <label for="aiApiKeyInput">API Key (브라우저 localStorage 저장)</label>
+        <div class="ai-key-input-wrap">
+          <input type="password" id="aiApiKeyInput" class="ai-settings-input" placeholder="AI API 키를 입력하세요">
+          <button type="button" id="aiToggleKeyVisBtn" class="ai-key-eye-btn" title="키 보기/숨기기">
+            <i class="fa-regular fa-eye"></i>
+          </button>
+        </div>
+      </div>
+
+      <button type="button" id="aiSaveSettingsBtn" class="ai-settings-save-btn">저장하기</button>
     </div>
   </div>
 

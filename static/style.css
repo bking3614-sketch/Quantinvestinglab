@@ -2606,3 +2606,156 @@ input[type="range"]::-webkit-slider-thumb:hover {
   }
 }
 
+/* ════════════════════════════════════════════════════════════
+   [Tab 1] 계절성 스위칭 멀티 자산 배분 카드 UI
+   ════════════════════════════════════════════════════════════ */
+.season-alloc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.season-alloc-header label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.season-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.season-sum-badge {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.season-sum-badge.valid {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #6ee7b7;
+}
+
+.season-sum-badge.invalid {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+}
+
+.btn-add-asset {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(99, 102, 241, 0.45);
+  background: rgba(99, 102, 241, 0.16);
+  color: #c7d2fe;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.btn-add-asset:hover {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.season-asset-card {
+  position: relative;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.season-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.season-search-col {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.season-search-col .search-input-wrapper {
+  position: relative;
+}
+
+.season-search-col .ticker-search-input {
+  width: 100%;
+  padding: 5px 26px 5px 28px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.season-asset-name {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.season-weight-col {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.season-weight-input {
+  width: 62px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(15, 23, 42, 0.85);
+  color: #f8fafc;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.btn-remove-asset {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.82rem;
+  line-height: 1;
+  margin-left: 2px;
+}
+
+.btn-remove-asset:hover {
+  background: #ef4444;
+  color: #fff;
+}
+
+.season-slider {
+  width: 100%;
+  cursor: pointer;
+}
+

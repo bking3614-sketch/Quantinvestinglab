@@ -1820,30 +1820,60 @@ def _run_dynamic_allocation_backtest(
 
 # ── 백테스트 시뮬레이션 엔진 ────────────────────────────────
 def _run_seasonality_backtest(
-    etf1: str,
-    etf2: str,
-    etf1_ratio: float,       # 0.0 ~ 1.0 (예: 0.5)
-    init_cap: float,
-    monthly_add: float,
-    season_months: list[int],
+    etf1: str = "SOXL",
+    etf2: str = "TQQQ",
+    etf1_ratio: float = 0.5, # 0.0 ~ 1.0 (예: 0.5)
+    init_cap: float = 50000000.0,
+    monthly_add: float = 500000.0,
+    season_months: list[int] = None,
     rebal_months: int = 1,   # 리밸런싱 주기 (1 ~ 360개월)
     start_date: str = None,
     end_date: str = None,
-    fee_rate: float = 0.001  # 기본 0.1% 거래비용/슬리피지
+    fee_rate: float = 0.001, # 기본 0.1% 거래비용/슬리피지
+    assets: list[dict] = None
 ):
     if _data is None:
         raise ValueError("Yahoo Finance 데이터가 아직 로드되지 않았습니다.")
 
+    if season_months is None:
+        season_months = [1, 2, 3, 4, 11, 12]
+
     rebal_months = max(1, min(360, int(rebal_months)))
-    etf2_ratio = 1.0 - etf1_ratio
     safe_ticker = SAFE_PROXY
 
-    req_tickers = list({etf1, etf2, safe_ticker})
+    if assets and isinstance(assets, list) and len(assets) > 0:
+        raw_assets = []
+        for item in assets:
+            t = str(item.get("ticker", "")).strip().upper()
+            w = float(item.get("weight", 0))
+            if t and w > 0:
+                raw_assets.append({"ticker": t, "weight": w})
+        if not raw_assets:
+            raise ValueError("유효한 종목과 비중이 필요합니다.")
+        total_w = sum(a["weight"] for a in raw_assets)
+        asset_list = [{"ticker": a["ticker"], "weight": a["weight"] / total_w} for a in raw_assets]
+    else:
+        etf2_ratio = 1.0 - etf1_ratio
+        asset_list = [
+            {"ticker": etf1, "weight": etf1_ratio},
+            {"ticker": etf2, "weight": etf2_ratio}
+        ]
+
+    tickers = [a["ticker"] for a in asset_list]
+    weights = np.array([a["weight"] for a in asset_list], dtype=float)
+    k = len(asset_list)
+
+    etf1 = asset_list[0]["ticker"]
+    etf2 = asset_list[1]["ticker"] if k > 1 else asset_list[0]["ticker"]
+    etf1_ratio = float(weights[0])
+    etf2_ratio = float(weights[1]) if k > 1 else 0.0
+
+    req_tickers = list(dict.fromkeys(tickers + [safe_ticker]))
     for t in req_tickers:
         if t not in _data.columns:
             raise ValueError(f"티커 {t} 가 데이터셋에 없습니다.")
 
-    # 3개 자산이 모두 존재하는 공통 기간 추출
+    # 모든 선택 자산이 존재하는 공통 기간 추출
     sub_df = _data[req_tickers].dropna().copy()
     if len(sub_df) < 20:
         raise ValueError("분석에 필요한 충분한 데이터가 없습니다.")
@@ -1880,15 +1910,12 @@ def _run_seasonality_backtest(
         if has_synthetic else None
     )
 
-    p1 = sub_df[etf1].values
-    p2 = sub_df[etf2].values
+    prices_mat = np.vstack([sub_df[t].values for t in tickers])  # shape (k, n)
     ps = sub_df[safe_ticker].values
 
-    r1 = np.zeros(n)
-    r2 = np.zeros(n)
+    asset_rets = np.zeros((k, n), dtype=float)
+    asset_rets[:, 1:] = (prices_mat[:, 1:] / prices_mat[:, :-1]) - 1.0
     rs = np.zeros(n)
-    r1[1:] = (p1[1:] / p1[:-1]) - 1.0
-    r2[1:] = (p2[1:] / p2[:-1]) - 1.0
     rs[1:] = (ps[1:] / ps[:-1]) - 1.0
 
     strat_val = np.zeros(n)
@@ -1898,27 +1925,22 @@ def _run_seasonality_backtest(
     bh_daily_r = np.zeros(n)
     is_bull_arr = np.zeros(n, dtype=bool)
 
-    # ── 포트폴리오 자산별 금액 추적 모델 ──
-    # Buy & Hold 자산 금액 (초기 투자금 배분)
-    bh_v1 = init_cap * etf1_ratio
-    bh_v2 = init_cap * etf2_ratio
+    # ── 포트폴리오 자산별 금액 추적 모델 (N종 동적 지원) ──
+    bh_vals = init_cap * weights
 
-    # 계절성 스위칭 자산 금액
     is_init_bull = (months[0] in season_months)
     if is_init_bull:
-        strat_v1 = init_cap * etf1_ratio
-        strat_v2 = init_cap * etf2_ratio
+        strat_vals = init_cap * weights
         strat_v_safe = 0.0
         prev_mode = "BULL"
     else:
-        strat_v1 = 0.0
-        strat_v2 = 0.0
+        strat_vals = np.zeros(k, dtype=float)
         strat_v_safe = init_cap
         prev_mode = "SAFE"
 
     curr_inv = init_cap
-    strat_val[0] = strat_v1 + strat_v2 + strat_v_safe
-    bh_val[0] = bh_v1 + bh_v2
+    strat_val[0] = float(strat_vals.sum()) + strat_v_safe
+    bh_val[0] = float(bh_vals.sum())
     invested[0] = curr_inv
     is_bull_arr[0] = is_init_bull
 
@@ -1937,19 +1959,15 @@ def _run_seasonality_backtest(
             curr_inv += monthly_add
 
             # 1. Buy & Hold: 월 적립금 목표 비중 투입 및 N개월 주기 리밸런싱
-            bh_v1 += monthly_add * etf1_ratio
-            bh_v2 += monthly_add * etf2_ratio
+            bh_vals += monthly_add * weights
             bh_months_count += 1
 
             if bh_months_count >= rebal_months:
-                bh_total = bh_v1 + bh_v2
-                target_bh_v1 = bh_total * etf1_ratio
-                # 리밸런싱 거래량에 따른 수수료 차감
-                trade_amt = abs(bh_v1 - target_bh_v1)
+                bh_total = float(bh_vals.sum())
+                target_bh = bh_total * weights
+                trade_amt = 0.5 * float(np.sum(np.abs(bh_vals - target_bh)))
                 rebal_fee = trade_amt * fee_rate
-                bh_total_after_fee = bh_total - rebal_fee
-                bh_v1 = bh_total_after_fee * etf1_ratio
-                bh_v2 = bh_total_after_fee * etf2_ratio
+                bh_vals = (bh_total - rebal_fee) * weights
                 bh_months_count = 0
                 total_rebalances_bh += 1
 
@@ -1958,66 +1976,50 @@ def _run_seasonality_backtest(
             next_mode = "BULL" if is_bull_month else "SAFE"
 
             if next_mode == "BULL":
-                # 현재 달이 강세월인 경우
                 if prev_mode == "SAFE":
-                    # 안전자산 -> 위험자산 스위칭 매수 (수수료 차감 후 목표 비중 배분)
                     total_strat_prev = (strat_v_safe + monthly_add) * (1.0 - fee_rate)
-                    strat_v1 = total_strat_prev * etf1_ratio
-                    strat_v2 = total_strat_prev * etf2_ratio
+                    strat_vals = total_strat_prev * weights
                     strat_v_safe = 0.0
                     prev_mode = "BULL"
                     strat_bull_months_count = 0
                 else:
-                    # 연속 위험자산 보유 달: 적립금 투입
-                    strat_v1 += monthly_add * etf1_ratio
-                    strat_v2 += monthly_add * etf2_ratio
+                    strat_vals += monthly_add * weights
                     strat_bull_months_count += 1
 
-                    # 위험자산 연속 보유 구간 내에서 N개월 주기 리밸런싱 도래 시
                     if strat_bull_months_count >= rebal_months:
-                        st_total = strat_v1 + strat_v2
-                        target_st_v1 = st_total * etf1_ratio
-                        trade_amt_st = abs(strat_v1 - target_st_v1)
+                        st_total = float(strat_vals.sum())
+                        target_st = st_total * weights
+                        trade_amt_st = 0.5 * float(np.sum(np.abs(strat_vals - target_st)))
                         rebal_fee_st = trade_amt_st * fee_rate
-                        st_total_after = st_total - rebal_fee_st
-                        strat_v1 = st_total_after * etf1_ratio
-                        strat_v2 = st_total_after * etf2_ratio
+                        strat_vals = (st_total - rebal_fee_st) * weights
                         strat_bull_months_count = 0
                         total_rebalances_strat += 1
             else:
-                # 현재 달이 비강세월 (안전자산 파킹달)
                 if prev_mode == "BULL":
-                    # 위험자산 전량 매도 -> 안전자산 100% 매수 파킹 (수수료 차감)
-                    total_strat_prev = (strat_v1 + strat_v2) * (1.0 - fee_rate) + monthly_add
+                    total_strat_prev = float(strat_vals.sum()) * (1.0 - fee_rate) + monthly_add
                     strat_v_safe = total_strat_prev
-                    strat_v1 = 0.0
-                    strat_v2 = 0.0
+                    strat_vals = np.zeros(k, dtype=float)
                     prev_mode = "SAFE"
                     strat_bull_months_count = 0
                 else:
-                    # 연속 안전자산 파킹달: 적립금 안전자산에 추가
                     strat_v_safe += monthly_add
 
         is_bull_arr[i] = (prev_mode == "BULL")
 
         # ── 일일 가격 변동 반영 ──
-        # Buy & Hold
-        bh_prev_day = bh_v1 + bh_v2
-        bh_v1 *= (1.0 + r1[i])
-        bh_v2 *= (1.0 + r2[i])
-        bh_curr_day = bh_v1 + bh_v2
+        bh_prev_day = float(bh_vals.sum())
+        bh_vals *= (1.0 + asset_rets[:, i])
+        bh_curr_day = float(bh_vals.sum())
         bh_val[i] = bh_curr_day
         bh_daily_r[i] = (bh_curr_day / bh_prev_day - 1.0) if bh_prev_day > 0 else 0.0
 
-        # 계절성 스위칭
-        strat_prev_day = strat_v1 + strat_v2 + strat_v_safe
+        strat_prev_day = float(strat_vals.sum()) + strat_v_safe
         if prev_mode == "BULL":
-            strat_v1 *= (1.0 + r1[i])
-            strat_v2 *= (1.0 + r2[i])
+            strat_vals *= (1.0 + asset_rets[:, i])
         else:
             strat_v_safe *= (1.0 + rs[i])
 
-        strat_curr_day = strat_v1 + strat_v2 + strat_v_safe
+        strat_curr_day = float(strat_vals.sum()) + strat_v_safe
         strat_val[i] = strat_curr_day
         strat_daily_r[i] = (strat_curr_day / strat_prev_day - 1.0) if strat_prev_day > 0 else 0.0
 
@@ -2119,9 +2121,10 @@ def _run_seasonality_backtest(
     monthly_stats = []
     for m in range(1, 13):
         m_rows = sub_df[sub_df['Month'] == m]
-        m_r1 = (m_rows[etf1].pct_change().fillna(0).mean() * 21) * 100.0
-        m_r2 = (m_rows[etf2].pct_change().fillna(0).mean() * 21) * 100.0
-        port_m_ret = etf1_ratio * m_r1 + etf2_ratio * m_r2
+        m_rets = [(m_rows[t].pct_change().fillna(0).mean() * 21) * 100.0 for t in tickers]
+        m_r1 = m_rets[0]
+        m_r2 = m_rets[1] if k > 1 else 0.0
+        port_m_ret = sum(weights[j] * m_rets[j] for j in range(k))
         is_selected = (m in season_months)
         monthly_stats.append({
             "month": m,
@@ -2132,6 +2135,7 @@ def _run_seasonality_backtest(
         })
 
     # ── 백테스트 결과 자동 요약 (Executive Summary) 생성 ──────────
+    portfolio_label = " + ".join(f"{a['ticker']}({round(a['weight'] * 100, 1):g}%)" for a in asset_list)
     alpha_final = strat_metrics["final_value"] - bh_metrics["final_value"]
     mdd_defense = bh_metrics["mdd_pct"] - strat_metrics["mdd_pct"]
 
@@ -2140,7 +2144,7 @@ def _run_seasonality_backtest(
     )
 
     summary_bullets = [
-        f"수익성 (TR & CAGR): 계절성 스위칭 전략은 총 수익률(TR) {strat_metrics['tr_pct']:+,.2f}%, 연평균 CAGR {strat_metrics['cagr_pct']:+.2f}%를 기록하여 Buy & Hold 대비 {strat_metrics['cagr_pct'] - bh_metrics['cagr_pct']:+.2f}%p의 연복리 성과를 보였습니다. 최종 자산은 약 {abs(alpha_final):,d}원 {'초과 달성' if alpha_final >= 0 else '부족'}하였습니다.",
+        f"수익성 (TR & CAGR): [{portfolio_label}] 계절성 스위칭 전략은 총 수익률(TR) {strat_metrics['tr_pct']:+,.2f}%, 연평균 CAGR {strat_metrics['cagr_pct']:+.2f}%를 기록하여 Buy & Hold 대비 {strat_metrics['cagr_pct'] - bh_metrics['cagr_pct']:+.2f}%p의 연복리 성과를 보였습니다. 최종 자산은 약 {abs(alpha_final):,d}원 {'초과 달성' if alpha_final >= 0 else '부족'}하였습니다.",
         f"리스크 방어 (전체 MDD): 전체 기간 최대 낙폭(MDD)은 Buy & Hold {bh_metrics['mdd_pct']:.2f}% 대비 {strat_metrics['mdd_pct']:.2f}%로, 하방 리스크를 {abs(mdd_defense):.1f}%p {'대폭 완화' if mdd_defense > 0 else '유지'}했습니다.",
         f"최악의 해 방어력: Buy & Hold 기준 가장 가혹했던 해({bh_metrics['worst_year']}년 MDD {bh_metrics['worst_year_mdd_pct']:.2f}%)와 대비하여, 계절성 전략의 최악의 해는 {strat_metrics['worst_year']}년(MDD {strat_metrics['worst_year_mdd_pct']:.2f}%)으로 약세장 방어 효과를 입증했습니다.",
         f"자본 효율성 (MAR): 감수한 최대 낙폭 대비 복리 수익을 나타내는 MAR 비율은 계절성 전략이 {strat_metrics['mar_ratio']}로 Buy & Hold({bh_metrics['mar_ratio']}) 대비 {'우수한' if strat_metrics['mar_ratio'] >= bh_metrics['mar_ratio'] else '유사한'} 자본 효율성을 기록했습니다.",
@@ -2151,6 +2155,8 @@ def _run_seasonality_backtest(
     return {
         "status": "success",
         "info": {
+            "portfolio_label": portfolio_label,
+            "assets": [{"ticker": a["ticker"], "weight": round(a["weight"] * 100, 1)} for a in asset_list],
             "etf1": etf1,
             "etf2": etf2,
             "etf1_ratio": round(etf1_ratio * 100, 1),
@@ -2431,16 +2437,33 @@ def backtest():
         }), 400
         
     data = request.get_json() or {}
-    etf1 = str(data.get('etf1', 'SOXL')).strip().upper()
-    etf2 = str(data.get('etf2', 'TQQQ')).strip().upper()
-    
-    # 신규 티커가 있을 경우 온디맨드로 데이터 로드
-    _ensure_tickers_loaded([etf1, etf2])
+    raw_assets = data.get('assets')
+    parsed_assets = None
 
-    # ETF 1과 ETF 2의 비중 처리
-    etf1_ratio_pct = float(data.get('etf1_ratio', 50))
-    if 'etf2_ratio' in data and 'etf1_ratio' not in data:
-        etf1_ratio_pct = 100.0 - float(data.get('etf2_ratio', 50))
+    if isinstance(raw_assets, list) and len(raw_assets) > 0:
+        parsed_assets = []
+        for a in raw_assets:
+            if not isinstance(a, dict):
+                continue
+            t = str(a.get('ticker', '')).strip().upper()
+            w = float(a.get('weight', 0))
+            if t and w >= 0:
+                parsed_assets.append({'ticker': t, 'weight': w})
+        if parsed_assets:
+            _ensure_tickers_loaded([a['ticker'] for a in parsed_assets])
+        else:
+            parsed_assets = None
+
+    etf1 = str(data.get('etf1') or data.get('ticker1') or 'SOXL').strip().upper()
+    etf2 = str(data.get('etf2') or data.get('ticker2') or 'TQQQ').strip().upper()
+
+    if not parsed_assets:
+        _ensure_tickers_loaded([etf1, etf2])
+
+    # ETF 1과 ETF 2의 비중 처리 (하위 호환)
+    etf1_ratio_pct = float(data.get('etf1_ratio', data.get('weight1', 50)))
+    if ('etf2_ratio' in data or 'weight2' in data) and ('etf1_ratio' not in data and 'weight1' not in data):
+        etf1_ratio_pct = 100.0 - float(data.get('etf2_ratio', data.get('weight2', 50)))
 
     init_cap = float(data.get('init_cap', 50000000))
     monthly_add = float(data.get('monthly_add', 500000))
@@ -2463,7 +2486,8 @@ def backtest():
             rebal_months=rebal_months,
             start_date=start_date,
             end_date=end_date,
-            fee_rate=fee_rate
+            fee_rate=fee_rate,
+            assets=parsed_assets
         )
         return jsonify(result)
     except Exception as e:
@@ -2823,6 +2847,137 @@ def api_checklist_signals():
         "buy_on_count": sum(1 for item in buy_checklist if item["met"]),
         "sell_on_count": sum(1 for item in sell_checklist if item["met"])
     })
+
+
+@app.route('/api/ai_analyst_chat', methods=['POST', 'OPTIONS'])
+def api_ai_analyst_chat():
+    """Gemini / OpenAI / Anthropic REST API 기반 멀티 프로바이더 퀀트 애널리스트 챗봇"""
+    if request.method == 'OPTIONS':
+        return jsonify({"ok": True}), 200
+
+    data = request.get_json(force=True, silent=True) or {}
+    provider = str(data.get("provider") or "gemini").strip().lower()
+    model = str(data.get("model") or "").strip()
+    api_key = str(data.get("api_key") or "").strip()
+    tab_name = str(data.get("tab_name") or "퀀트 대시보드").strip()
+    context_summary = str(data.get("context_summary") or "현재 선택된 전략의 요약 데이터가 없습니다.").strip()
+    raw_messages = data.get("messages") if isinstance(data.get("messages"), list) else []
+
+    if not api_key:
+        return jsonify({
+            "ok": False,
+            "error": "우측 상단 톱니바퀴(⚙️) 설정에서 AI API 키를 먼저 등록해 주세요."
+        })
+
+    clean_messages = []
+    for m in raw_messages:
+        if not isinstance(m, dict):
+            continue
+        role = str(m.get("role") or "user").strip().lower()
+        if role not in ("user", "assistant"):
+            role = "user"
+        content = str(m.get("content") or "").strip()
+        if content:
+            clean_messages.append({"role": role, "content": content})
+
+    if not clean_messages:
+        clean_messages = [{"role": "user", "content": "현재 화면의 전략 데이터를 분석해 주세요."}]
+
+    system_prompt = (
+        f"너는 월스트리트 출신 퀀트 포트폴리오 애널리스트다. "
+        f"현재 사용자가 보고 있는 [{tab_name}] 탭의 실제 백테스트 및 스크리닝 데이터는 다음과 같다:\n"
+        f"{context_summary}\n"
+        f"이 수치를 근거로 명확하고 실전적인 투자 인사이트를 한국어로 답변해 줘."
+    )
+
+    try:
+        if "openai" in provider:
+            target_model = model or "gpt-4o-mini"
+            resp = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}"
+                },
+                json={
+                    "model": target_model,
+                    "messages": [{"role": "system", "content": system_prompt}] + clean_messages,
+                    "temperature": 0.3
+                },
+                timeout=30
+            )
+            if resp.status_code in (401, 403):
+                return jsonify({"ok": False, "error": "OpenAI API 키가 유효하지 않거나 권한이 없습니다. 키를 다시 확인해 주세요."})
+            if resp.status_code == 429:
+                return jsonify({"ok": False, "error": "OpenAI API 호출 한도(Rate Limit/Quota)를 초과했습니다. 잠시 후 다시 시도해 주세요."})
+            resp.raise_for_status()
+            reply = resp.json()["choices"][0]["message"]["content"].strip()
+
+        elif "anthropic" in provider or "claude" in provider:
+            target_model = model or "claude-3-5-sonnet-latest"
+            resp = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "Content-Type": "application/json",
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01"
+                },
+                json={
+                    "model": target_model,
+                    "max_tokens": 1500,
+                    "system": system_prompt,
+                    "messages": clean_messages
+                },
+                timeout=30
+            )
+            if resp.status_code in (401, 403):
+                return jsonify({"ok": False, "error": "Anthropic Claude API 키가 유효하지 않거나 권한이 없습니다. 키를 다시 확인해 주세요."})
+            if resp.status_code == 429:
+                return jsonify({"ok": False, "error": "Anthropic Claude API 호출 한도(Rate Limit)를 초과했습니다. 잠시 후 다시 시도해 주세요."})
+            resp.raise_for_status()
+            blocks = resp.json().get("content") or []
+            reply = "\n".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text").strip()
+
+        else:
+            # 기본값: Gemini
+            target_model = model or "gemini-2.5-flash"
+            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
+            gemini_contents = [
+                {
+                    "role": "model" if m["role"] == "assistant" else "user",
+                    "parts": [{"text": m["content"]}]
+                }
+                for m in clean_messages
+            ]
+            resp = requests.post(
+                gemini_url,
+                json={
+                    "systemInstruction": {"parts": [{"text": system_prompt}]},
+                    "contents": gemini_contents,
+                    "generationConfig": {"temperature": 0.3}
+                },
+                timeout=30
+            )
+            if resp.status_code in (400, 401, 403):
+                err_msg = ""
+                try:
+                    err_msg = resp.json().get("error", {}).get("message", "")
+                except Exception:
+                    pass
+                if "API_KEY_INVALID" in err_msg or resp.status_code in (401, 403):
+                    return jsonify({"ok": False, "error": "Gemini API 키가 유효하지 않거나 권한이 없습니다. 키를 다시 확인해 주세요."})
+                return jsonify({"ok": False, "error": f"Gemini 요청 오류: {err_msg or resp.status_code}"})
+            if resp.status_code == 429:
+                return jsonify({"ok": False, "error": "Gemini API 호출 한도(Quota/Rate Limit)를 초과했습니다. 잠시 후 다시 시도해 주세요."})
+            resp.raise_for_status()
+            reply = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+        return jsonify({"ok": True, "reply": reply})
+
+    except requests.Timeout:
+        return jsonify({"ok": False, "error": "AI 서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"AI 응답 생성 중 오류가 발생했습니다: {e}"})
 
 
 # Vercel 서버 시작 시 즉시 내장 캐시 데이터를 메모리에 적재

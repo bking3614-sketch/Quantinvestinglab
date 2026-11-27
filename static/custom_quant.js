@@ -22,6 +22,7 @@
     activeFactorCategory: 'PRICE',
     chartInstance: null,
     lastScreenedStocks: [],
+    lastBacktestResult: null,
     showAllocation: false,
     currentInsightStock: null
   };
@@ -1146,6 +1147,8 @@
         throw new Error(res.message || '백테스트 실패');
       }
 
+      state.lastBacktestResult = res;
+
       // 1) KPI 카드 갱신
       renderKPIs(res, payload.initial_capital);
 
@@ -2121,10 +2124,24 @@
       `;
     }
 
+    const isKrTicker = normalizeCountryCode(state.country) === 'KR' && (/^\d{6}/.test(ticker) || /\.(KS|KQ)$/i.test(ticker));
+    const discHeaderSpan = dom.insightDartMsg
+      ? dom.insightDartMsg.closest('.cq-insight-section')?.querySelector('.cq-insight-section-header span')
+      : null;
+    if (discHeaderSpan) {
+      discHeaderSpan.innerHTML = isKrTicker
+        ? '<i class="fa-solid fa-file-lines text-primary"></i> 최근 3개월 주요 DART 공시'
+        : '<i class="fa-solid fa-landmark text-primary"></i> 최근 3개월 주요 SEC 공시 (미국)';
+    }
+
     if (dom.insightAiList) {
       dom.insightAiList.innerHTML = '<li><i class="fa-solid fa-spinner fa-spin"></i> AI 핵심 요약을 생성하는 중...</li>';
     }
-    if (dom.insightDartMsg) dom.insightDartMsg.textContent = '최근 3개월 DART 공시를 조회하는 중...';
+    if (dom.insightDartMsg) {
+      dom.insightDartMsg.textContent = isKrTicker
+        ? '최근 3개월 DART 공시를 조회하는 중...'
+        : '미국 SEC EDGAR 최근 공시를 조회하는 중...';
+    }
     if (dom.insightDartList) dom.insightDartList.innerHTML = '';
     if (dom.insightDartKeyBox) dom.insightDartKeyBox.style.display = 'none';
 
@@ -2177,15 +2194,134 @@
 
       if (dom.insightDartList) {
         const discs = Array.isArray(res.disclosures) ? res.disclosures : [];
-        dom.insightDartList.innerHTML = discs.map(d => `
-          <a class="cq-drawer-dart-item" href="${d.url || '#'}" target="_blank" rel="noopener noreferrer">
-            <span class="cq-drawer-dart-title">${d.title}</span>
-            <span class="cq-drawer-dart-meta">
-              <span>${d.date || '-'}</span>
-              <span>${d.submitter || ''} <i class="fa-solid fa-arrow-up-right-from-square"></i></span>
-            </span>
-          </a>
-        `).join('');
+        let html = '';
+
+        // 미국/해외 종목: AI 공시 핵심 정리 미니 카드 최상단 배치
+        if (!isKrTicker && Array.isArray(res.sec_ai_summary) && res.sec_ai_summary.length > 0) {
+          html += `
+            <div class="cq-sec-summary-card">
+              <div class="cq-sec-summary-title">🤖 AI 공시 핵심 정리</div>
+              <ul class="cq-sec-summary-list">
+                ${res.sec_ai_summary.map(line => `<li>${line}</li>`).join('')}
+              </ul>
+            </div>
+          `;
+        }
+
+        const secKoLabel = {
+          '10-K': '연간 실적 보고서',
+          '10-Q': '분기 실적 보고서',
+          '8-K': '주요 경영사항 공시',
+          '4': '내부자 거래',
+          '20-F': '해외기업 연간 보고서',
+          '6-K': '해외기업 수시 공시'
+        };
+
+        const displayDiscs = isKrTicker ? discs : discs.slice(0, 5);
+        html += displayDiscs.map((d, dIdx) => {
+          const fType = (d.type || d.remark || '').trim();
+          const linkUrl = d.url || d.edgarUrl || '#';
+          if (!isKrTicker && fType) {
+            const koDesc = secKoLabel[fType] || 'SEC 공시';
+            const badgeCls = (fType === '10-K' || fType === '20-F')
+              ? 'form-10k'
+              : (fType === '10-Q' ? 'form-10q' : ((fType === '8-K' || fType === '6-K') ? 'form-8k' : 'form-other'));
+            return `
+              <div class="cq-drawer-dart-item cq-sec-card" data-sec-idx="${dIdx}">
+                <div class="cq-sec-item-top">
+                  <span class="cq-sec-badge ${badgeCls}">${fType}</span>
+                  <span class="cq-sec-date">${d.date || '-'}</span>
+                </div>
+                <span class="cq-drawer-dart-title">${fType} (${koDesc})</span>
+                <span class="cq-drawer-dart-meta">
+                  <span>${d.title || ''}</span>
+                </span>
+                <div class="cq-sec-actions">
+                  <a class="cq-btn-sec-link" href="${linkUrl}" target="_blank" rel="noopener noreferrer">
+                    원문 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                  </a>
+                  <button type="button" class="cq-btn-sec-ai"
+                    data-ticker="${ticker}"
+                    data-form-type="${fType}"
+                    data-filing-date="${d.date || ''}"
+                    data-edgar-url="${linkUrl}">
+                    ✨ AI 심층 요약
+                  </button>
+                </div>
+                <div class="sec-ai-detail-box" style="display: none;"></div>
+              </div>
+            `;
+          }
+          return `
+            <a class="cq-drawer-dart-item" href="${linkUrl}" target="_blank" rel="noopener noreferrer">
+              <span class="cq-drawer-dart-title">${d.title}</span>
+              <span class="cq-drawer-dart-meta">
+                <span>${d.date || '-'}</span>
+                <span>${d.submitter || ''} <i class="fa-solid fa-arrow-up-right-from-square"></i></span>
+              </span>
+            </a>
+          `;
+        }).join('');
+
+        dom.insightDartList.innerHTML = html;
+
+        dom.insightDartList.querySelectorAll('.cq-btn-sec-ai').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const card = btn.closest('.cq-sec-card');
+            const detailBox = card ? card.querySelector('.sec-ai-detail-box') : null;
+            if (!detailBox) return;
+
+            // 이미 로드된 경우 재호출 없이 아코디언 토글만 수행
+            if (btn.dataset.loaded === '1') {
+              const isOpen = detailBox.style.display !== 'none';
+              detailBox.style.display = isOpen ? 'none' : 'block';
+              btn.innerHTML = isOpen ? '✨ AI 심층 요약' : '▲ 요약 접기';
+              return;
+            }
+
+            const origText = '✨ AI 심층 요약';
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 분석 중...';
+            detailBox.style.display = 'block';
+            detailBox.innerHTML = '<div class="cq-sec-ai-loading"><i class="fa-solid fa-spinner fa-spin"></i> SEC 공시 원문을 분석하고 있습니다...</div>';
+
+            try {
+              const sumResp = await fetch('/api/sec_filing_summary', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  ticker: btn.dataset.ticker || ticker,
+                  form_type: btn.dataset.formType || 'SEC',
+                  filing_date: btn.dataset.filingDate || '',
+                  edgar_url: btn.dataset.edgarUrl || ''
+                })
+              });
+              const sumRes = await sumResp.json();
+              if (!sumResp.ok || !sumRes.ok) {
+                throw new Error(sumRes.message || `요약 생성 실패 (${sumResp.status})`);
+              }
+
+              const safeHtml = String(sumRes.summary || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n/g, '<br>');
+
+              detailBox.innerHTML = `<div class="cq-sec-ai-content">${safeHtml}</div>`;
+              btn.dataset.loaded = '1';
+              btn.innerHTML = '▲ 요약 접기';
+            } catch (err) {
+              detailBox.innerHTML = `<div class="cq-sec-ai-error"><i class="fa-solid fa-triangle-exclamation"></i> ${err.message}</div>`;
+              btn.innerHTML = origText;
+            } finally {
+              btn.disabled = false;
+            }
+          });
+        });
       }
     } catch (err) {
       if (dom.insightAiList) {
@@ -2228,6 +2364,69 @@
     }
   }
 
+  function setupAiChatSubTab() {
+    const tabsWrap = document.getElementById('cqTableSubTabs');
+    const tablePane = document.getElementById('cqSubPaneTable');
+    const aiPane = document.getElementById('cqAiChatContainer');
+
+    if (tabsWrap && tablePane && aiPane) {
+      tabsWrap.querySelectorAll('.ai-subtab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          tabsWrap.querySelectorAll('.ai-subtab-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const mode = btn.dataset.subtab || 'table';
+          tablePane.style.display = mode === 'table' ? 'block' : 'none';
+          aiPane.style.display = mode === 'ai' ? 'block' : 'none';
+        });
+      });
+    }
+
+    if (window.QuantAiChat && aiPane) {
+      window.QuantAiChat.mount(aiPane, {
+        tabKey: 'customquant',
+        tabName: '마법공식',
+        suggestions: [
+          '스크리닝 상위 종목 중 핵심 추천 3선과 이유',
+          '현재 결과의 핵심 리스크와 MDD 방어법 분석',
+          '선택된 팩터 조합의 과최적화 위험 및 개선 제안'
+        ],
+        getContextSummary: () => {
+          const lines = [];
+          lines.push(`[유니버스] 국가=${state.country}, 시장=${state.market}, 비중방식=${state.weightMethod}`);
+          const factors = collectSelectedFactors().map(f => `${f.metric}(${f.direction})`).join(', ');
+          lines.push(`[선택 팩터] ${factors}`);
+
+          if (state.lastBacktestResult && state.lastBacktestResult.metrics) {
+            const m = state.lastBacktestResult.metrics;
+            lines.push(`[백테스트 성과] CAGR: ${m.cagr}%, MDD: -${Math.abs(m.mdd || 0)}%, Sharpe: ${m.sharpe}, 총수익률: ${m.total_return}%`);
+            if (state.lastBacktestResult.overfitting_analysis) {
+              const oa = state.lastBacktestResult.overfitting_analysis;
+              lines.push(`[과최적화 검증] 등급: ${oa.risk_grade}, 성과유지율: ${oa.retention_rate}%`);
+            }
+          }
+
+          const top20 = (state.lastScreenedStocks || []).slice(0, 20);
+          if (top20.length > 0) {
+            lines.push(`[스크리닝 선정 상위 ${top20.length}종목]`);
+            top20.forEach((s, idx) => {
+              const score = s.composite_score !== undefined
+                ? (Number(s.composite_score) * 100).toFixed(1)
+                : (s.factors?.composite_rank ?? '-');
+              const per = s.per ?? s.factors?.per ?? '-';
+              const pbr = s.pbr ?? s.factors?.pbr ?? '-';
+              const roe = s.roe ?? s.factors?.roe ?? '-';
+              const mom = s.momentum_12m ?? s.factors?.momentum_12m ?? '-';
+              lines.push(`${idx + 1}. ${s.ticker} (${s.name || ''}) | 점수:${score} | PER:${per} | PBR:${pbr} | ROE:${roe}% | 12M모멘텀:${mom}%`);
+            });
+          } else {
+            lines.push('[스크리닝] 아직 스크리닝이 실행되지 않았습니다.');
+          }
+          return lines.join('\n');
+        }
+      });
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────
   // 12. 초기화 실행
   // ─────────────────────────────────────────────────────────────
@@ -2246,6 +2445,7 @@
     setupNlBuilder();
     setupPresetBar();
     setupTableEnhancements();
+    setupAiChatSubTab();
 
     if (dom.btnRunScreen) {
       dom.btnRunScreen.addEventListener('click', runScreening);

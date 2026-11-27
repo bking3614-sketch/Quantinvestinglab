@@ -3785,11 +3785,200 @@ def _cq_get_dart_corp_code(stock_code: str, dart_api_key: str) -> Optional[str]:
         return None
 
 
+_SEC_CIK_CACHE: Optional[Dict[str, str]] = None
+_SEC_HEADERS = {
+    "User-Agent": "MyQuantInvestingLabs contact@quantinvestinglab.com",
+    "Accept": "application/json"
+}
+
+_SEC_FORM_LABELS = {
+    "10-K": "연간 실적·사업보고서(10-K)",
+    "10-Q": "분기 실적 보고서(10-Q)",
+    "8-K": "주요 경영사항 수시 공시(8-K)",
+    "4": "내부자(임원·대주주) 지분 변동(Form 4)",
+    "20-F": "해외기업 연간 보고서(20-F)",
+    "6-K": "해외기업 수시 공시(6-K)",
+    "DEF 14A": "주주총회 위임장 공시(DEF 14A)",
+    "13F-HR": "기관 보유지분 보고(13F-HR)"
+}
+
+
+def _is_kr_ticker(ticker: str, country: str) -> bool:
+    """한국 상장 종목(.KS/.KQ 또는 6자리 숫자 코드) 여부 판별"""
+    t = str(ticker or "").strip().upper()
+    if t.endswith(".KS") or t.endswith(".KQ"):
+        return True
+    base = t.split(".")[0].strip()
+    if re.fullmatch(r"\d{6}", base):
+        return True
+    if normalize_country(country) == "KR" and base.isdigit():
+        return True
+    return False
+
+
+def _get_sec_cik(ticker: str) -> Optional[str]:
+    """SEC company_tickers.json에서 티커에 해당하는 10자리 CIK 조회"""
+    global _SEC_CIK_CACHE
+    clean = str(ticker or "").strip().upper()
+    if not clean:
+        return None
+
+    if _SEC_CIK_CACHE is None:
+        try:
+            resp = requests.get(
+                "https://www.sec.gov/files/company_tickers.json",
+                headers=_SEC_HEADERS,
+                timeout=10
+            )
+            resp.raise_for_status()
+            raw = resp.json()
+            mapping: Dict[str, str] = {}
+            for item in (raw.values() if isinstance(raw, dict) else []):
+                tk = str(item.get("ticker") or "").strip().upper()
+                cik_num = item.get("cik_str")
+                if tk and cik_num is not None:
+                    mapping[tk] = str(cik_num).zfill(10)
+            _SEC_CIK_CACHE = mapping
+        except Exception as e:
+            logger.warning(f"SEC company_tickers.json fetch failed: {e}")
+            _SEC_CIK_CACHE = {}
+
+    for candidate in (clean, clean.replace("-", "."), clean.replace(".", "-")):
+        if candidate in _SEC_CIK_CACHE:
+            return _SEC_CIK_CACHE[candidate]
+    return None
+
+
+def _fetch_sec_filings_for_us(ticker: str) -> Tuple[List[Dict[str, Any]], str, str]:
+    """미국/해외 종목 SEC 공시 조회 (1순위 yfinance, 2순위 SEC 공식 API 폴백)"""
+    clean_ticker = str(ticker or "").strip().upper()
+    cutoff_dt = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+    items: List[Dict[str, Any]] = []
+
+    # 1순위: yfinance.Ticker(ticker).get_sec_filings()
+    try:
+        tk_obj = yf.Ticker(clean_ticker)
+        raw_filings = tk_obj.get_sec_filings()
+        if isinstance(raw_filings, list) and len(raw_filings) > 0:
+            recent_items = []
+            all_items = []
+            for f in raw_filings:
+                if not isinstance(f, dict):
+                    continue
+                f_date = str(f.get("date") or "")[:10]
+                f_type = str(f.get("type") or "").strip()
+                f_title = str(f.get("title") or _SEC_FORM_LABELS.get(f_type, f_type or "SEC Filing")).strip()
+                f_url = str(f.get("edgarUrl") or "").strip()
+                entry = {
+                    "title": f"[{f_type}] {f_title}" if f_type and not f_title.startswith("[") else f_title,
+                    "type": f_type,
+                    "date": f_date,
+                    "submitter": "SEC EDGAR (Yahoo)",
+                    "remark": f_type,
+                    "url": f_url
+                }
+                all_items.append(entry)
+                if f_date and f_date >= cutoff_dt:
+                    recent_items.append(entry)
+            items = recent_items[:10] if recent_items else all_items[:5]
+    except Exception as e:
+        logger.debug(f"yfinance get_sec_filings failed for {clean_ticker}: {e}")
+
+    # 2순위 폴백: SEC 공식 무료 API (company_tickers.json -> submissions/CIK.json)
+    if not items:
+        cik = _get_sec_cik(clean_ticker)
+        if cik:
+            try:
+                sub_url = f"https://data.sec.gov/submissions/CIK{cik}.json"
+                resp = requests.get(sub_url, headers=_SEC_HEADERS, timeout=10)
+                resp.raise_for_status()
+                sub_json = resp.json()
+                recent = (sub_json.get("filings") or {}).get("recent") or {}
+                forms = recent.get("form") or []
+                dates = recent.get("filingDate") or []
+                acc_nums = recent.get("accessionNumber") or []
+                prim_docs = recent.get("primaryDocument") or []
+                descs = recent.get("primaryDocDescription") or []
+
+                target_forms = {"10-K", "10-Q", "8-K", "4", "20-F", "6-K"}
+                recent_items = []
+                fallback_items = []
+                cik_int = str(int(cik))
+
+                for idx in range(min(len(forms), len(dates), len(acc_nums))):
+                    f_type = str(forms[idx] or "").strip()
+                    f_date = str(dates[idx] or "")[:10]
+                    acc_raw = str(acc_nums[idx] or "").strip()
+                    acc_nodash = acc_raw.replace("-", "")
+                    pdoc = str(prim_docs[idx] if idx < len(prim_docs) else "").strip()
+                    desc = str(descs[idx] if idx < len(descs) else "").strip()
+                    label = desc or _SEC_FORM_LABELS.get(f_type, f_type)
+                    url = (
+                        f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}/{pdoc}"
+                        if acc_nodash and pdoc else f"https://www.sec.gov/edgar/browse/?CIK={cik}"
+                    )
+                    entry = {
+                        "title": f"[{f_type}] {label}" if f_type else label,
+                        "type": f_type,
+                        "date": f_date,
+                        "submitter": "SEC EDGAR",
+                        "remark": f_type,
+                        "url": url
+                    }
+                    if f_type in target_forms:
+                        fallback_items.append(entry)
+                        if f_date >= cutoff_dt:
+                            recent_items.append(entry)
+                    if len(fallback_items) >= 12 and len(recent_items) >= 8:
+                        break
+
+                items = recent_items[:10] if recent_items else fallback_items[:5]
+            except Exception as e:
+                logger.warning(f"SEC submissions API failed for {clean_ticker} (CIK={cik}): {e}")
+
+    if items:
+        return items, "ok", f"SEC EDGAR 최근 공시 {len(items)}건"
+    return [], "ok", f"{clean_ticker}의 최근 3개월 주요 SEC 공시 내역이 없습니다."
+
+
+def _build_sec_ai_summary(name: str, ticker: str, filings: List[Dict[str, Any]]) -> List[str]:
+    """조회된 SEC 공시 유형과 제출일을 바탕으로 한국어 AI 공시 핵심 요약(2~3줄) 생성"""
+    if not filings:
+        return [
+            f"{name}({ticker})의 최근 3개월 내 신규 SEC 주요 공시(10-K/10-Q/8-K)가 확인되지 않았습니다.",
+            "정기 실적 발표 일정 및 직전 분기 보고서(10-Q) 확인을 권장합니다."
+        ]
+
+    counts: Dict[str, int] = {}
+    for f in filings:
+        ft = str(f.get("type") or f.get("remark") or "기타").strip()
+        counts[ft] = counts.get(ft, 0) + 1
+
+    latest = filings[0]
+    latest_dt = latest.get("date") or "최근"
+    latest_type = latest.get("type") or latest.get("remark") or "SEC"
+    latest_desc = _SEC_FORM_LABELS.get(latest_type, latest.get("title") or latest_type)
+
+    type_parts = [f"{_SEC_FORM_LABELS.get(k, k)} {v}건" for k, v in list(counts.items())[:3]]
+    lines = [
+        f"SEC 최근 공시 현황: 총 {len(filings)}건 확인 ({', '.join(type_parts)}).",
+        f"최신 제출 공시: {latest_dt}에 {latest_desc} 공시가 접수되었습니다."
+    ]
+
+    if "8-K" in counts:
+        lines.append("주요 경영사항 변동(8-K) 공시가 포함되어 있어 실적 가이던스·계약·경영진 변동 여부를 확인하세요.")
+    elif "4" in counts:
+        lines.append("내부자 거래(Form 4) 공시가 확인되어 경영진·주요 주주의 지분 매수/매도 동향을 참고할 수 있습니다.")
+    elif "10-K" in counts or "10-Q" in counts:
+        lines.append("정기 재무제표(10-K/10-Q) 공시가 최근 제출되어 최신 매출·현금흐름 수치가 반영되어 있습니다.")
+
+    return lines[:3]
+
+
 def _fetch_recent_dart_disclosures(ticker: str, country: str, dart_api_key: str) -> Tuple[List[Dict[str, Any]], str, str]:
-    """최근 3개월 주요 OpenDART 공시 목록 조회"""
-    norm_c = normalize_country(country)
-    if norm_c != "KR":
-        return [], "non_kr", "해외 종목은 한국 OpenDART 공시 대상이 아닙니다."
+    """최근 3개월 주요 공시 목록 조회 (한국: OpenDART, 미국/해외: SEC EDGAR)"""
+    if not _is_kr_ticker(ticker, country):
+        return _fetch_sec_filings_for_us(ticker)
 
     if not dart_api_key or not dart_api_key.strip():
         return [], "no_key", "OpenDART API 키가 설정되지 않았습니다. 아래 입력란에 키를 입력하면 최근 3개월 공시를 조회할 수 있습니다."
@@ -3842,7 +4031,14 @@ def _fetch_recent_dart_disclosures(ticker: str, country: str, dart_api_key: str)
         return [], "error", f"DART 공시 조회 중 오류: {e}"
 
 
-def _build_local_stock_summary(name: str, ticker: str, metrics: Dict[str, Any], disclosures: List[Dict[str, Any]]) -> List[str]:
+def _build_local_stock_summary(
+    name: str,
+    ticker: str,
+    metrics: Dict[str, Any],
+    disclosures: List[Dict[str, Any]],
+    is_kr: bool = True,
+    sec_ai_summary: Optional[List[str]] = None
+) -> List[str]:
     """LLM API 키 미설정 시 퀀트 지표 + 공시 기반 3줄 요약 생성"""
     per = _safe_float(metrics.get("per"))
     pbr = _safe_float(metrics.get("pbr"))
@@ -3866,11 +4062,17 @@ def _build_local_stock_summary(name: str, ticker: str, metrics: Dict[str, Any], 
         qual_parts.append(f"12M 모멘텀 {mom12:+.1f}%")
     line2 = f"수익성·추세: {', '.join(qual_parts)}를 기록 중입니다." if qual_parts else "수익성 및 모멘텀 팩터 복합 점수가 양호합니다."
 
-    if disclosures:
+    if not is_kr and sec_ai_summary:
+        line3 = sec_ai_summary[0]
+        if len(sec_ai_summary) > 1:
+            line3 = f"{sec_ai_summary[0]} {sec_ai_summary[1]}"
+    elif disclosures:
         latest_titles = ", ".join(d["title"] for d in disclosures[:2])
         line3 = f"최근 3개월 공시({len(disclosures)}건): '{latest_titles}' 등이 확인됩니다."
-    else:
+    elif is_kr:
         line3 = "최근 공시 내역이 없거나 DART 키 미설정 상태이므로, 재무·업황 추가 확인을 권장합니다."
+    else:
+        line3 = "최근 SEC 공시 내역이 확인되지 않아 직전 분기 실적(10-Q) 확인을 권장합니다."
 
     return [line1, line2, line3]
 
@@ -3954,13 +4156,22 @@ def api_stock_insight():
     if not ticker:
         return jsonify({"status": "error", "message": "종목 티커가 필요합니다."}), 400
 
+    is_kr = _is_kr_ticker(ticker, country)
     disclosures, dart_status, dart_message = _fetch_recent_dart_disclosures(ticker, country, dart_api_key)
+    sec_ai_summary = _build_sec_ai_summary(name, ticker, disclosures) if not is_kr else []
 
     ai_lines = _generate_llm_stock_summary(name, ticker, metrics, disclosures, llm_provider, llm_api_key)
     if ai_lines:
         ai_mode = "llm"
     else:
-        ai_lines = _build_local_stock_summary(name, ticker, metrics, disclosures)
+        ai_lines = _build_local_stock_summary(
+            name,
+            ticker,
+            metrics,
+            disclosures,
+            is_kr=is_kr,
+            sec_ai_summary=sec_ai_summary
+        )
         ai_mode = "local_fallback"
 
     return jsonify({
@@ -3970,6 +4181,140 @@ def api_stock_insight():
         "dart_status": dart_status,
         "dart_message": dart_message,
         "disclosures": disclosures,
+        "sec_ai_summary": sec_ai_summary,
         "ai_mode": ai_mode,
         "ai_summary": ai_lines
     })
+
+
+# ==============================================================================
+# 10. 미국 SEC 공시 원문 AI 심층 요약 (/api/sec_filing_summary)
+# ==============================================================================
+
+_SEC_FILING_SUMMARY_CACHE: Dict[Tuple[str, str], str] = {}
+
+
+def _clean_html_to_text(raw_html: str) -> str:
+    """HTML 태그·스크립트·스타일을 제거하고 순수 본문 텍스트만 추출"""
+    import html as html_lib
+
+    text = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw_html)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html_lib.unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _extract_sec_edgar_text(edgar_url: str, max_chars: int = 14000) -> str:
+    """SEC EDGAR 원문 HTML에서 핵심 본문 텍스트(최대 14,000자) 추출 (디렉토리 인덱스 페이지 자동 추적)"""
+    from urllib.parse import urljoin
+
+    sec_headers = {"User-Agent": "MyQuantInvestingLabs contact@quantinvestinglab.com"}
+    resp = requests.get(edgar_url, headers=sec_headers, timeout=10)
+    resp.raise_for_status()
+    raw_html = resp.text
+
+    # 디렉토리/인덱스 페이지인 경우 첫 번째 실제 보고서 .htm/.html 링크 추적
+    is_index = (
+        edgar_url.rstrip("/").endswith("-index.htm")
+        or edgar_url.rstrip("/").endswith("-index.html")
+        or "tableFile" in raw_html
+        or "Index of /" in raw_html
+    )
+    if is_index:
+        links = re.findall(r'href=["\']([^"\']+\.html?)["\']', raw_html, flags=re.IGNORECASE)
+        target_href = None
+        for href in links:
+            low = href.lower()
+            if "-index.htm" in low or "index.html" in low:
+                continue
+            target_href = href
+            break
+        if target_href:
+            doc_url = urljoin(edgar_url, target_href)
+            doc_resp = requests.get(doc_url, headers=sec_headers, timeout=10)
+            doc_resp.raise_for_status()
+            raw_html = doc_resp.text
+
+    return _clean_html_to_text(raw_html)[:max_chars]
+
+
+@custom_quant_bp.route("/sec_filing_summary", methods=["POST", "OPTIONS"])
+def api_sec_filing_summary():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+    data = request.get_json(force=True, silent=True) or {}
+    ticker = str(data.get("ticker") or "").strip().upper()
+    form_type = str(data.get("form_type") or "SEC").strip()
+    filing_date = str(data.get("filing_date") or "").strip()
+    edgar_url = str(data.get("edgar_url") or "").strip()
+
+    if not ticker or not edgar_url:
+        return jsonify({"ok": False, "message": "ticker와 edgar_url이 필요합니다."}), 400
+
+    cache_key = (ticker, edgar_url)
+    if cache_key in _SEC_FILING_SUMMARY_CACHE:
+        return jsonify({
+            "ok": True,
+            "cached": True,
+            "summary": _SEC_FILING_SUMMARY_CACHE[cache_key]
+        })
+
+    api_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
+    if not api_key:
+        return jsonify({
+            "ok": False,
+            "message": "서버에 GEMINI_API_KEY 환경변수가 설정되어 있지 않습니다. 무료 Gemini API 키를 설정해 주세요."
+        })
+
+    try:
+        filing_text = _extract_sec_edgar_text(edgar_url, max_chars=14000)
+        if not filing_text:
+            return jsonify({"ok": False, "message": "SEC 공시 원문 텍스트를 추출하지 못했습니다."})
+    except Exception as e:
+        logger.warning(f"SEC EDGAR fetch failed ({edgar_url}): {e}")
+        return jsonify({"ok": False, "message": f"SEC 공시 원문 조회 실패: {e}"})
+
+    prompt = (
+        f"너는 월스트리트 퀀트 애널리스트다. 아래 미국 SEC 공시({ticker} {form_type}, {filing_date}) 원문을 분석해 "
+        f"한국어로 간결하고 명확하게 정리해 줘. 반드시 다음 3가지 항목으로 구분해 불릿 포인트로 작성해:\n"
+        f"1) 📊 핵심 재무 및 실적 변화 (매출·영업이익·현금흐름 등 수치 중심),\n"
+        f"2) 📌 주요 경영 이벤트 및 가이던스,\n"
+        f"3) ⚠️ 투자자 유의 리스크 요인.\n\n"
+        f"[SEC 공시 원문 발췌]\n{filing_text}"
+    )
+
+    try:
+        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        resp = requests.post(
+            gemini_url,
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.2}
+            },
+            timeout=25
+        )
+        resp.raise_for_status()
+        res_json = resp.json()
+        summary_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+        _SEC_FILING_SUMMARY_CACHE[cache_key] = summary_text
+        return jsonify({
+            "ok": True,
+            "cached": False,
+            "summary": summary_text
+        })
+    except Exception as e:
+        logger.warning(f"Gemini sec_filing_summary failed for {ticker}: {e}")
+        return jsonify({"ok": False, "message": f"Gemini AI 요약 생성 실패: {e}"})
+
+
+@custom_quant_bp.record_once
+def _register_sec_filing_summary_root_route(setup_state):
+    """app.py 수정 없이 /api/sec_filing_summary 경로에서도 직접 접근 가능하도록 등록"""
+    setup_state.app.add_url_rule(
+        "/api/sec_filing_summary",
+        endpoint="api_sec_filing_summary_root",
+        view_func=api_sec_filing_summary,
+        methods=["POST", "OPTIONS"]
+    )
