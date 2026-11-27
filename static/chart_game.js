@@ -30,6 +30,9 @@
     tickerInfo: null,    // 게임 종료 후 공개할 실제 종목 메타데이터
 
     // 계좌 및 트레이딩 상태
+    gameMode: 'practice', // 'practice' | 'career'
+    gameEnded: false,
+    pendingCareerEnter: false,
     initialCapital: 10000000,
     cash: 10000000,
     holdingQty: 0,
@@ -165,6 +168,47 @@
       resBnhReturn: document.getElementById('cgResBnhReturn'),
       resFinalAsset: document.getElementById('cgResFinalAsset'),
       resTradesInfo: document.getElementById('cgResTradesInfo'),
+
+      // 로비 & 커리어 모드 UI
+      lobbyView: document.getElementById('cgLobbyView'),
+      gamePlayView: document.getElementById('cgGamePlayView'),
+      btnStartPractice: document.getElementById('cgBtnStartPractice'),
+      btnStartCareer: document.getElementById('cgBtnStartCareer'),
+      btnResetCareer: document.getElementById('cgBtnResetCareer'),
+      btnBackToLobby: document.getElementById('cgBtnBackToLobby'),
+      gameModeBadge: document.getElementById('cgGameModeBadge'),
+      careerTierBadge: document.getElementById('cgCareerTierBadge'),
+      careerCapitalVal: document.getElementById('cgCareerCapitalVal'),
+      careerGamesCount: document.getElementById('cgCareerGamesCount'),
+      initCapitalInput: document.getElementById('cgInitCapitalInput'),
+      capitalLockIcon: document.getElementById('cgCapitalLockIcon'),
+      btnResetCapitalInGame: document.getElementById('cgBtnResetCapitalInGame'),
+
+      // 내 트레이딩 성적 카드
+      statsNicknameTitle: document.getElementById('cgStatsNicknameTitle'),
+      statsGamesBadge: document.getElementById('cgStatsGamesBadge'),
+      btnEditNickname: document.getElementById('cgBtnEditNickname'),
+      nickEditRow: document.getElementById('cgNickEditRow'),
+      nickEditInput: document.getElementById('cgNickEditInput'),
+      btnSaveNickname: document.getElementById('cgBtnSaveNickname'),
+      btnCancelNickname: document.getElementById('cgBtnCancelNickname'),
+      winRateRingCircle: document.getElementById('cgWinRateRingCircle'),
+      winRateRingText: document.getElementById('cgWinRateRingText'),
+      statsAvgReturn: document.getElementById('cgStatsAvgReturn'),
+      statsPayoffRatio: document.getElementById('cgStatsPayoffRatio'),
+      statsTpiScore: document.getElementById('cgStatsTpiScore'),
+      btnToggleLogs: document.getElementById('cgBtnToggleLogs'),
+      logsChevron: document.getElementById('cgLogsChevron'),
+      gameLogsCollapse: document.getElementById('cgGameLogsCollapse'),
+      gameLogsTableBody: document.getElementById('cgGameLogsTableBody'),
+
+      // 명예의 전당
+      hofFilterBadge: document.getElementById('cgHofFilterBadge'),
+      hofPeriodTabs: document.getElementById('cgHofPeriodTabs'),
+      hofPodium1: document.getElementById('cgHofPodium1'),
+      hofPodium2: document.getElementById('cgHofPodium2'),
+      hofPodium3: document.getElementById('cgHofPodium3'),
+      hofTableBody: document.getElementById('cgHofTableBody'),
 
       // 우측 하단 인사이트 패널 (재무제표 & 뉴스/시황 2-탭)
       bottomInsightPanel: document.getElementById('cgBottomInsightPanel'),
@@ -1144,6 +1188,23 @@
     }
     const turnsVal = parseInt(dom.maxTurnsInput?.value || '50', 10);
 
+    // 모드별 초기 자본금 결정 (연습 모드: 입력값 / 커리어 1회차: 입력값 저장 / 커리어 2회차~: 이월 자본금)
+    let reqInitCap = 10000000;
+    if (state.gameMode === 'career') {
+      const career = loadCareerState();
+      if (career.gamesPlayed >= 1) {
+        reqInitCap = Math.max(100000, Math.round(career.currentCapital));
+      } else {
+        const inpVal = parseFloat(dom.initCapitalInput?.value || '10000000');
+        reqInitCap = (!isNaN(inpVal) && inpVal >= 100000) ? Math.round(inpVal) : 10000000;
+        career.currentCapital = reqInitCap;
+        saveCareerState(career);
+      }
+    } else {
+      const inpVal = parseFloat(dom.initCapitalInput?.value || '10000000');
+      reqInitCap = (!isNaN(inpVal) && inpVal >= 100000) ? Math.round(inpVal) : 10000000;
+    }
+
     if (dom.btnNewGame) dom.btnNewGame.disabled = true;
     if (dom.btnApplyTicker) dom.btnApplyTicker.disabled = true;
 
@@ -1156,7 +1217,7 @@
         body: JSON.stringify({
           ticker: tickerVal,
           max_turns: turnsVal,
-          initial_capital: 10000000
+          initial_capital: reqInitCap
         })
       });
 
@@ -1172,8 +1233,9 @@
       state.currentIdx = state.startIdx;
       state.maxTurns = data.max_turns || turnsVal;
       state.currentTurn = 0;
+      state.gameEnded = false;
       state.currency = data.currency || 'KRW';
-      state.initialCapital = data.initial_capital || 10000000;
+      state.initialCapital = reqInitCap;
       state.cash = state.initialCapital;
       state.holdingQty = 0;
       state.avgBuyPrice = 0;
@@ -1241,6 +1303,22 @@
     }
     if (dom.resFinalAsset) dom.resFinalAsset.textContent = formatPrice(finalAsset);
     if (dom.resTradesInfo) dom.resTradesInfo.textContent = `${totalTrades}회 / ${winRate.toFixed(1)}%`;
+
+    // 커리어 모드 종료 시 최종 평가자산 저장 (Supabase DB + localStorage 폴백)
+    if (state.gameMode === 'career' && !state.gameEnded) {
+      state.gameEnded = true;
+      const profitAmount = Math.round(finalAsset - state.initialCapital);
+      const endCapital = Math.max(0, Math.round(finalAsset));
+      const tickerCode = state.tickerInfo?.ticker || dom.tickerInput?.value?.trim() || 'RANDOM';
+      recordCareerGameResult({
+        ticker: tickerCode,
+        returnPct: Number(myReturn.toFixed(2)),
+        profitAmount,
+        endCapital
+      });
+    } else {
+      state.gameEnded = true;
+    }
 
     // 모달 표시
     if (dom.resultModal) {
@@ -1683,23 +1761,650 @@
     }
   }
 
+  const CAREER_STORAGE_KEY = 'cg_career_state_v1';
+  const GAME_LOGS_STORAGE_KEY = 'cg_game_logs_v1';
+
+  function loadLocalGameLogs() {
+    try {
+      const raw = localStorage.getItem(GAME_LOGS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveLocalGameLog(entry) {
+    try {
+      const logs = loadLocalGameLogs();
+      logs.unshift(entry);
+      localStorage.setItem(GAME_LOGS_STORAGE_KEY, JSON.stringify(logs.slice(0, 20)));
+    } catch (e) {}
+  }
+
+  function loadCareerState() {
+    try {
+      const raw = localStorage.getItem(CAREER_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          gamesPlayed: Number(parsed.gamesPlayed) || 0,
+          winsCount: Number(parsed.winsCount) || 0,
+          avgWinPct: Number(parsed.avgWinPct) || 0,
+          avgLossPct: Number(parsed.avgLossPct) || 0,
+          nickname: parsed.nickname || '',
+          currentCapital: parsed.currentCapital !== undefined ? Number(parsed.currentCapital) : 10000000
+        };
+      }
+    } catch (e) {}
+    return { gamesPlayed: 0, winsCount: 0, avgWinPct: 0, avgLossPct: 0, nickname: '', currentCapital: 10000000 };
+  }
+
+  function saveCareerState(career) {
+    try {
+      localStorage.setItem(CAREER_STORAGE_KEY, JSON.stringify(career));
+    } catch (e) {}
+  }
+
+  async function fetchCareerProfileFromDB() {
+    const user = window.sbUser;
+    const sb = window.sbClient;
+    if (!user || !sb) {
+      updateLobbyCareerUI();
+      return;
+    }
+
+    try {
+      const { data, error } = await sb
+        .from('cg_career_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const defaultNick = (user.email || 'trader').split('@')[0];
+      if (!data) {
+        const initProfile = {
+          user_id: user.id,
+          nickname: defaultNick,
+          current_capital: 10000000,
+          games_count: 0,
+          wins_count: 0,
+          avg_win_pct: 0,
+          avg_loss_pct: 0
+        };
+        try {
+          await sb.from('cg_career_profiles').upsert(initProfile, { onConflict: 'user_id' });
+        } catch (e) {}
+
+        saveCareerState({
+          gamesPlayed: 0,
+          winsCount: 0,
+          avgWinPct: 0,
+          avgLossPct: 0,
+          nickname: defaultNick,
+          currentCapital: 10000000
+        });
+      } else {
+        saveCareerState({
+          gamesPlayed: Number(data.games_count) || 0,
+          winsCount: Number(data.wins_count) || 0,
+          avgWinPct: Number(data.avg_win_pct) || 0,
+          avgLossPct: Number(data.avg_loss_pct) || 0,
+          nickname: data.nickname || defaultNick,
+          currentCapital: data.current_capital !== undefined ? Number(data.current_capital) : 10000000
+        });
+      }
+    } catch (err) {
+      console.warn('[ChartGame] Supabase 커리어 프로필 조회 실패 (localStorage 폴백 사용):', err);
+    }
+
+    updateLobbyCareerUI();
+    if (state.gameMode === 'career') {
+      syncCapitalControlForMode();
+    }
+  }
+
+  async function recordCareerGameResult({ ticker, returnPct, profitAmount, endCapital }) {
+    const career = loadCareerState();
+    const prevGames = career.gamesPlayed || 0;
+    const prevWins = career.winsCount || 0;
+    const prevLosses = Math.max(0, prevGames - prevWins);
+
+    const isWin = profitAmount > 0;
+    const nextGames = prevGames + 1;
+    const nextWins = prevWins + (isWin ? 1 : 0);
+
+    let nextAvgWin = career.avgWinPct || 0;
+    let nextAvgLoss = career.avgLossPct || 0;
+    if (isWin) {
+      nextAvgWin = ((nextAvgWin * prevWins) + returnPct) / Math.max(1, nextWins);
+    } else if (returnPct < 0) {
+      const nextLosses = prevLosses + 1;
+      nextAvgLoss = ((nextAvgLoss * prevLosses) + returnPct) / Math.max(1, nextLosses);
+    }
+
+    const updatedLocal = {
+      gamesPlayed: nextGames,
+      winsCount: nextWins,
+      avgWinPct: Number(nextAvgWin.toFixed(2)),
+      avgLossPct: Number(nextAvgLoss.toFixed(2)),
+      nickname: career.nickname || (window.sbUser?.email || 'trader').split('@')[0],
+      currentCapital: endCapital
+    };
+
+    // 1) localStorage 즉시 저장 (폴백 보장)
+    saveCareerState(updatedLocal);
+    saveLocalGameLog({
+      created_at: new Date().toISOString(),
+      ticker,
+      return_pct: returnPct,
+      profit_amount: profitAmount,
+      end_capital: endCapital
+    });
+    syncCapitalControlForMode();
+    updateLobbyCareerUI();
+    if (dom.gameLogsCollapse && dom.gameLogsCollapse.style.display !== 'none') {
+      loadAndRenderGameLogs();
+    }
+
+    // 2) Supabase DB (cg_game_logs + cg_career_profiles) 동기화
+    const user = window.sbUser;
+    const sb = window.sbClient;
+    if (!user || !sb) return;
+
+    try {
+      await sb.from('cg_game_logs').insert({
+        user_id: user.id,
+        mode: 'CAREER',
+        ticker,
+        return_pct: returnPct,
+        profit_amount: profitAmount,
+        end_capital: endCapital
+      });
+    } catch (err) {
+      console.warn('[ChartGame] cg_game_logs insert 실패 (로컬 저장 유지):', err);
+    }
+
+    try {
+      await sb.from('cg_career_profiles').upsert({
+        user_id: user.id,
+        nickname: updatedLocal.nickname,
+        current_capital: endCapital,
+        games_count: nextGames,
+        wins_count: nextWins,
+        avg_win_pct: updatedLocal.avgWinPct,
+        avg_loss_pct: updatedLocal.avgLossPct,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id' });
+    } catch (err) {
+      console.warn('[ChartGame] cg_career_profiles upsert 실패 (로컬 저장 유지):', err);
+    }
+  }
+
+  function getCareerTier(capital) {
+    const cap = Number(capital) || 0;
+    if (cap >= 100000000) return { name: 'ORACLE', cls: 'tier-oracle' };
+    if (cap >= 50000000) return { name: 'PLATINUM', cls: 'tier-platinum' };
+    if (cap >= 30000000) return { name: 'GOLD', cls: 'tier-gold' };
+    if (cap >= 15000000) return { name: 'SILVER', cls: 'tier-silver' };
+    return { name: 'BRONZE', cls: 'tier-bronze' };
+  }
+
+  function renderMyStatsCard(career) {
+    const c = career || loadCareerState();
+    const nick = (c.nickname || (window.sbUser?.email || '').split('@')[0] || '트레이더').trim();
+    const games = Number(c.gamesPlayed) || 0;
+    const wins = Number(c.winsCount) || 0;
+    const losses = Math.max(0, games - wins);
+    const avgWin = Number(c.avgWinPct) || 0;
+    const avgLoss = Number(c.avgLossPct) || 0;
+
+    if (dom.statsNicknameTitle) {
+      dom.statsNicknameTitle.textContent = `${nick}의 트레이딩 성적`;
+    }
+    if (dom.statsGamesBadge) {
+      dom.statsGamesBadge.textContent = `${games}게임`;
+    }
+
+    const winRate = games > 0 ? (wins / games) * 100 : 0;
+    const avgReturn = games > 0 ? ((avgWin * wins) + (avgLoss * losses)) / games : 0;
+    const payoffRatio = Math.abs(avgLoss) > 0.001
+      ? Math.abs(avgWin / avgLoss)
+      : (avgWin > 0 ? avgWin : 0);
+    const tpi = (winRate / 100.0) * payoffRatio;
+
+    if (dom.winRateRingText) {
+      dom.winRateRingText.textContent = `${Math.round(winRate)}%`;
+    }
+    if (dom.winRateRingCircle) {
+      const circumference = 2 * Math.PI * 32; // ~201.06
+      const clamped = Math.max(0, Math.min(100, winRate));
+      dom.winRateRingCircle.style.strokeDasharray = circumference.toFixed(2);
+      dom.winRateRingCircle.style.strokeDashoffset = (circumference * (1 - clamped / 100)).toFixed(2);
+    }
+
+    if (dom.statsAvgReturn) {
+      dom.statsAvgReturn.textContent = `${avgReturn >= 0 ? '+' : ''}${avgReturn.toFixed(1)}%`;
+      dom.statsAvgReturn.className = `cg-stats-kpi-val ${avgReturn > 0 ? 'pos' : (avgReturn < 0 ? 'neg' : '')}`;
+    }
+    if (dom.statsPayoffRatio) {
+      dom.statsPayoffRatio.textContent = payoffRatio.toFixed(2);
+    }
+    if (dom.statsTpiScore) {
+      dom.statsTpiScore.textContent = tpi.toFixed(2);
+    }
+  }
+
+  async function saveNewNickname(newNick) {
+    const cleanNick = (newNick || '').trim().slice(0, 20);
+    if (!cleanNick) return;
+
+    const career = loadCareerState();
+    career.nickname = cleanNick;
+    saveCareerState(career);
+    renderMyStatsCard(career);
+
+    if (window.sbClient && window.sbUser) {
+      try {
+        await window.sbClient.from('cg_career_profiles').upsert({
+          user_id: window.sbUser.id,
+          nickname: cleanNick,
+          current_capital: career.currentCapital,
+          games_count: career.gamesPlayed,
+          wins_count: career.winsCount,
+          avg_win_pct: career.avgWinPct,
+          avg_loss_pct: career.avgLossPct,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+      } catch (err) {
+        console.warn('[ChartGame] Supabase 닉네임 업데이트 실패 (로컬 저장 유지):', err);
+      }
+    }
+  }
+
+  async function loadAndRenderGameLogs() {
+    if (!dom.gameLogsTableBody) return;
+
+    let rows = [];
+    if (window.sbClient && window.sbUser) {
+      try {
+        const { data, error } = await window.sbClient
+          .from('cg_game_logs')
+          .select('created_at, ticker, return_pct, profit_amount, end_capital')
+          .eq('user_id', window.sbUser.id)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (!error && Array.isArray(data)) {
+          rows = data;
+        }
+      } catch (err) {
+        console.warn('[ChartGame] Supabase 게임 기록 조회 실패 (localStorage 폴백):', err);
+      }
+    }
+
+    if (rows.length === 0) {
+      rows = loadLocalGameLogs().slice(0, 20);
+    }
+
+    if (rows.length === 0) {
+      dom.gameLogsTableBody.innerHTML = '<tr><td colspan="5" class="cg-logs-empty">아직 기록된 게임이 없습니다.</td></tr>';
+      return;
+    }
+
+    dom.gameLogsTableBody.innerHTML = rows.map(r => {
+      const dtStr = r.created_at ? String(r.created_at).slice(0, 10) : '-';
+      const ret = Number(r.return_pct || 0);
+      const profit = Number(r.profit_amount || 0);
+      const endCap = Number(r.end_capital || 0);
+      const cls = ret >= 0 ? 'style="color:#34d399;"' : 'style="color:#f87171;"';
+      return `
+        <tr>
+          <td>${dtStr}</td>
+          <td style="font-weight:700;">${escapeHtml(r.ticker || '-')}</td>
+          <td ${cls}>${ret >= 0 ? '+' : ''}${ret.toFixed(2)}%</td>
+          <td ${cls}>${profit >= 0 ? '+' : ''}${Math.round(profit).toLocaleString()}원</td>
+          <td>${Math.round(endCap).toLocaleString()}원</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  let activeHofPeriod = 'all';
+
+  function formatHofCapital(cap) {
+    const val = Math.round(Number(cap) || 0);
+    if (val >= 100000000) {
+      const eok = Math.floor(val / 100000000);
+      const man = Math.round((val % 100000000) / 10000);
+      return man > 0 ? `${eok}억 ${man.toLocaleString()}만 원` : `${eok}억 원`;
+    }
+    if (val >= 10000) {
+      return `${Math.round(val / 10000).toLocaleString()}만 원`;
+    }
+    return `${val.toLocaleString()}원`;
+  }
+
+  function renderHofPodiumSlot(slotEl, entry) {
+    if (!slotEl) return;
+    const nickEl = slotEl.querySelector('.cg-podium-nick');
+    const capEl = slotEl.querySelector('.cg-podium-cap');
+    if (!entry) {
+      if (nickEl) {
+        nickEl.textContent = '도전자 대기 중';
+        nickEl.classList.add('waiting');
+      }
+      if (capEl) capEl.textContent = '-';
+      return;
+    }
+    if (nickEl) {
+      nickEl.textContent = entry.nickname || '익명 트레이더';
+      nickEl.classList.remove('waiting');
+    }
+    if (capEl) {
+      capEl.textContent = formatHofCapital(entry.current_capital);
+    }
+  }
+
+  async function fetchAndRenderHallOfFame(period = activeHofPeriod) {
+    activeHofPeriod = period || 'all';
+    if (dom.hofFilterBadge) {
+      const badgeMap = {
+        all: '커리어 전체 부문',
+        week: '주간 부문 (최근 7일)',
+        month: '월간 부문 (최근 30일)'
+      };
+      dom.hofFilterBadge.textContent = badgeMap[activeHofPeriod] || '커리어 전체 부문';
+    }
+
+    let entries = [];
+    if (window.sbClient) {
+      try {
+        let query = window.sbClient
+          .from('cg_career_profiles')
+          .select('user_id, nickname, current_capital, games_count, updated_at')
+          .gt('games_count', 0)
+          .order('current_capital', { ascending: false })
+          .limit(20);
+
+        if (activeHofPeriod === 'week' || activeHofPeriod === 'month') {
+          const days = activeHofPeriod === 'week' ? 7 : 30;
+          const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+          query = query.gte('updated_at', cutoff);
+        }
+
+        const { data, error } = await query;
+        if (!error && Array.isArray(data)) {
+          entries = data;
+        }
+      } catch (err) {
+        console.warn('[ChartGame] 명예의 전당 조회 실패:', err);
+      }
+    }
+
+    // Supabase 미연결 또는 빈 응답 시 로컬 커리어 기록이 있으면 표시
+    if (entries.length === 0) {
+      const localCareer = loadCareerState();
+      if (localCareer.gamesPlayed > 0) {
+        entries = [{
+          user_id: window.sbUser?.id || 'local',
+          nickname: localCareer.nickname || '나 (로컬)',
+          current_capital: localCareer.currentCapital,
+          games_count: localCareer.gamesPlayed
+        }];
+      }
+    }
+
+    renderHofPodiumSlot(dom.hofPodium1, entries[0] || null);
+    renderHofPodiumSlot(dom.hofPodium2, entries[1] || null);
+    renderHofPodiumSlot(dom.hofPodium3, entries[2] || null);
+
+    if (!dom.hofTableBody) return;
+    const rest = entries.slice(3, 20);
+    if (rest.length === 0) {
+      dom.hofTableBody.innerHTML = '<tr><td colspan="5" class="cg-logs-empty">4위 이하 순위 데이터가 없습니다.</td></tr>';
+      return;
+    }
+
+    const myId = window.sbUser ? window.sbUser.id : null;
+    dom.hofTableBody.innerHTML = rest.map((row, idx) => {
+      const rank = idx + 4;
+      const tier = getCareerTier(row.current_capital);
+      const isMe = myId && row.user_id === myId;
+      return `
+        <tr class="${isMe ? 'cg-hof-my-row' : ''}">
+          <td style="font-family:'JetBrains Mono',monospace; font-weight:700;">#${rank}</td>
+          <td><span class="cg-tier-badge ${tier.cls}">${tier.name}</span></td>
+          <td>${escapeHtml(row.nickname || '트레이더')}${isMe ? ' <span style="color:#818cf8;font-size:0.72rem;">(나)</span>' : ''}</td>
+          <td style="font-family:'JetBrains Mono',monospace;">${Number(row.games_count || 0)}게임</td>
+          <td style="text-align:right; font-family:'JetBrains Mono',monospace; color:#34d399;">${formatHofCapital(row.current_capital)}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function updateLobbyCareerUI() {
+    const career = loadCareerState();
+    const tier = getCareerTier(career.currentCapital);
+    if (dom.careerTierBadge) {
+      dom.careerTierBadge.textContent = tier.name;
+      dom.careerTierBadge.className = `cg-tier-badge ${tier.cls}`;
+    }
+    if (dom.careerCapitalVal) {
+      dom.careerCapitalVal.textContent = `${Math.round(career.currentCapital).toLocaleString()}원`;
+    }
+    if (dom.careerGamesCount) {
+      dom.careerGamesCount.textContent = `${career.gamesPlayed}회`;
+    }
+    renderMyStatsCard(career);
+  }
+
+  function syncCapitalControlForMode() {
+    const isCareer = state.gameMode === 'career';
+    if (dom.gameModeBadge) {
+      dom.gameModeBadge.textContent = isCareer ? '커리어 모드' : '연습 모드';
+      dom.gameModeBadge.classList.toggle('career', isCareer);
+    }
+
+    if (!dom.initCapitalInput) return;
+
+    if (!isCareer) {
+      dom.initCapitalInput.readOnly = false;
+      if (dom.capitalLockIcon) dom.capitalLockIcon.style.display = 'none';
+      if (dom.btnResetCapitalInGame) dom.btnResetCapitalInGame.style.display = 'none';
+      return;
+    }
+
+    const career = loadCareerState();
+    if (career.gamesPlayed === 0) {
+      dom.initCapitalInput.readOnly = false;
+      dom.initCapitalInput.value = Math.round(career.currentCapital || 10000000);
+      if (dom.capitalLockIcon) dom.capitalLockIcon.style.display = 'none';
+      if (dom.btnResetCapitalInGame) dom.btnResetCapitalInGame.style.display = 'none';
+    } else {
+      dom.initCapitalInput.readOnly = true;
+      dom.initCapitalInput.value = Math.max(0, Math.round(career.currentCapital));
+      if (dom.capitalLockIcon) dom.capitalLockIcon.style.display = 'inline-block';
+      if (dom.btnResetCapitalInGame) dom.btnResetCapitalInGame.style.display = 'inline-flex';
+    }
+  }
+
+  async function resetCareerToDefault(restartGame = false) {
+    const nick = (window.sbUser?.email || 'trader').split('@')[0];
+    const fresh = {
+      gamesPlayed: 0,
+      winsCount: 0,
+      avgWinPct: 0,
+      avgLossPct: 0,
+      nickname: nick,
+      currentCapital: 10000000
+    };
+    saveCareerState(fresh);
+    updateLobbyCareerUI();
+    syncCapitalControlForMode();
+
+    if (window.sbClient && window.sbUser) {
+      try {
+        await window.sbClient.from('cg_career_profiles').upsert({
+          user_id: window.sbUser.id,
+          nickname: nick,
+          current_capital: 10000000,
+          games_count: 0,
+          wins_count: 0,
+          avg_win_pct: 0,
+          avg_loss_pct: 0,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+      } catch (e) {}
+    }
+
+    if (restartGame && state.gameMode === 'career') {
+      startNewGame();
+    }
+  }
+
+  function enterGameMode(mode) {
+    state.gameMode = mode === 'career' ? 'career' : 'practice';
+    if (dom.lobbyView) dom.lobbyView.style.display = 'none';
+    if (dom.gamePlayView) dom.gamePlayView.style.display = 'block';
+    syncCapitalControlForMode();
+    startNewGame();
+  }
+
+  function returnToLobby() {
+    if (dom.gamePlayView) dom.gamePlayView.style.display = 'none';
+    if (dom.lobbyView) dom.lobbyView.style.display = 'flex';
+    updateLobbyCareerUI();
+  }
+
+  function setupLobbyAndCareerListeners() {
+    if (dom.btnStartPractice) {
+      dom.btnStartPractice.addEventListener('click', () => enterGameMode('practice'));
+    }
+    if (dom.btnStartCareer) {
+      dom.btnStartCareer.addEventListener('click', () => {
+        if (!window.sbUser) {
+          state.pendingCareerEnter = true;
+          if (window.sbAuth && typeof window.sbAuth.openLoginModal === 'function') {
+            window.sbAuth.openLoginModal();
+          } else {
+            alert('커리어 모드는 Google 로그인 후 이용할 수 있습니다.');
+          }
+          return;
+        }
+        enterGameMode('career');
+      });
+    }
+    if (dom.btnResetCareer) {
+      dom.btnResetCareer.addEventListener('click', () => {
+        if (confirm('커리어 모드 누적 자본금과 플레이 기록을 1,000만 원으로 초기화하시겠습니까?')) {
+          resetCareerToDefault(false);
+        }
+      });
+    }
+    if (dom.btnBackToLobby) {
+      dom.btnBackToLobby.addEventListener('click', returnToLobby);
+    }
+    if (dom.btnResetCapitalInGame) {
+      dom.btnResetCapitalInGame.addEventListener('click', () => {
+        if (confirm('커리어 자본금을 1,000만 원으로 초기화하고 새 게임을 시작하시겠습니까?')) {
+          resetCareerToDefault(true);
+        }
+      });
+    }
+
+    if (dom.btnEditNickname && dom.nickEditRow) {
+      dom.btnEditNickname.addEventListener('click', () => {
+        const isOpen = dom.nickEditRow.style.display !== 'none';
+        dom.nickEditRow.style.display = isOpen ? 'none' : 'flex';
+        if (!isOpen && dom.nickEditInput) {
+          const career = loadCareerState();
+          dom.nickEditInput.value = career.nickname || '';
+          dom.nickEditInput.focus();
+        }
+      });
+    }
+    if (dom.btnCancelNickname && dom.nickEditRow) {
+      dom.btnCancelNickname.addEventListener('click', () => {
+        dom.nickEditRow.style.display = 'none';
+      });
+    }
+    if (dom.btnSaveNickname && dom.nickEditInput) {
+      dom.btnSaveNickname.addEventListener('click', async () => {
+        await saveNewNickname(dom.nickEditInput.value);
+        if (dom.nickEditRow) dom.nickEditRow.style.display = 'none';
+      });
+    }
+    if (dom.nickEditInput) {
+      dom.nickEditInput.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          await saveNewNickname(dom.nickEditInput.value);
+          if (dom.nickEditRow) dom.nickEditRow.style.display = 'none';
+        }
+      });
+    }
+
+    if (dom.btnToggleLogs && dom.gameLogsCollapse) {
+      dom.btnToggleLogs.addEventListener('click', () => {
+        const isOpen = dom.gameLogsCollapse.style.display !== 'none';
+        dom.gameLogsCollapse.style.display = isOpen ? 'none' : 'block';
+        if (dom.logsChevron) dom.logsChevron.classList.toggle('open', !isOpen);
+        if (!isOpen) {
+          loadAndRenderGameLogs();
+        }
+      });
+    }
+
+    if (dom.hofPeriodTabs) {
+      dom.hofPeriodTabs.querySelectorAll('.cg-pill-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          dom.hofPeriodTabs.querySelectorAll('.cg-pill-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          fetchAndRenderHallOfFame(btn.dataset.period || 'all');
+        });
+      });
+    }
+
+    window.addEventListener('sb-auth-changed', async (e) => {
+      const user = e && e.detail ? e.detail.user : null;
+      if (user) {
+        await fetchCareerProfileFromDB();
+        if (state.pendingCareerEnter) {
+          state.pendingCareerEnter = false;
+          if (window.sbAuth && typeof window.sbAuth.closeLoginModal === 'function') {
+            window.sbAuth.closeLoginModal();
+          }
+          enterGameMode('career');
+        }
+      } else {
+        updateLobbyCareerUI();
+      }
+    });
+  }
+
   function init() {
     if (state.initialized) return;
     initDom();
     setupEventListeners();
+    setupLobbyAndCareerListeners();
     loadTickerDatalist();
     loadApiSettings();
+    updateLobbyCareerUI();
     state.initialized = true;
   }
 
-  // 탭 전환 시 최초 1회 자동 게임 실행
+  // 탭 전환 시 로비 뷰 우선 표시 + Supabase 커리어 프로필 & 명예의 전당 동기화
   window.initChartGameIfNeeded = function () {
     init();
-    if (!state.candles || state.candles.length === 0) {
-      startNewGame();
-    } else {
+    fetchCareerProfileFromDB();
+    fetchAndRenderHallOfFame(activeHofPeriod);
+    if (dom.gamePlayView && dom.gamePlayView.style.display !== 'none') {
       handleResize();
       triggerInsightUpdate(true);
+    } else if (dom.lobbyView) {
+      dom.lobbyView.style.display = 'flex';
     }
   };
 

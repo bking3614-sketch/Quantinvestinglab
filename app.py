@@ -4,6 +4,7 @@ import threading
 import warnings
 import numpy as np
 import pandas as pd
+import requests
 import yfinance as yf
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
@@ -2528,6 +2529,301 @@ def dynamic_allocation():
             "status": "error",
             "message": str(e)
         }), 400
+
+def _fetch_cnn_fear_greed() -> dict:
+    """CNN Fear & Greed Index 공식 JSON API 호출"""
+    url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://edition.cnn.com/markets/fear-and-greed"
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        fg = data.get("fear_and_greed", {}) or {}
+        hist_raw = (data.get("fear_and_greed_historical") or {}).get("data") or []
+
+        history_90d = []
+        for pt in hist_raw[-90:]:
+            x_ms = pt.get("x")
+            y_val = pt.get("y")
+            if x_ms is not None and y_val is not None:
+                dt_str = datetime.datetime.utcfromtimestamp(float(x_ms) / 1000.0).strftime("%Y-%m-%d")
+                history_90d.append({"date": dt_str, "score": round(float(y_val), 1)})
+
+        def _r(v):
+            return round(float(v), 1) if v is not None else None
+
+        return {
+            "available": True,
+            "score": _r(fg.get("score")),
+            "rating": fg.get("rating") or "N/A",
+            "previous_close": _r(fg.get("previous_close")),
+            "previous_1_week": _r(fg.get("previous_1_week")),
+            "previous_1_month": _r(fg.get("previous_1_month")),
+            "previous_1_year": _r(fg.get("previous_1_year")),
+            "history_90d": history_90d
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "score": None,
+            "rating": "Unavailable",
+            "previous_close": None,
+            "previous_1_week": None,
+            "previous_1_month": None,
+            "previous_1_year": None,
+            "history_90d": [],
+            "error": str(e)
+        }
+
+
+def _extract_close_series(df: pd.DataFrame, ticker: str) -> pd.Series:
+    """yf.download 결과에서 특정 티커의 Close 시계열을 안전하게 추출"""
+    if df is None or df.empty:
+        return pd.Series(dtype=float)
+    if isinstance(df.columns, pd.MultiIndex):
+        if ticker in df.columns.get_level_values(0):
+            sub = df[ticker]
+            col = "Close" if "Close" in sub.columns else sub.columns[0]
+            return pd.to_numeric(sub[col], errors="coerce").dropna()
+        if "Close" in df.columns.get_level_values(0) and ticker in df["Close"].columns:
+            return pd.to_numeric(df["Close"][ticker], errors="coerce").dropna()
+    else:
+        col = "Close" if "Close" in df.columns else df.columns[0]
+        return pd.to_numeric(df[col], errors="coerce").dropna()
+    return pd.Series(dtype=float)
+
+
+def _calc_rsi_series(series: pd.Series, period: int = 14) -> pd.Series:
+    delta = series.diff()
+    gain = delta.clip(lower=0).ewm(alpha=1.0 / period, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1.0 / period, adjust=False).mean()
+    rs = gain / loss.replace(0, np.nan)
+    rsi = 100.0 - (100.0 / (1.0 + rs))
+    return rsi.fillna(50.0)
+
+
+@app.route('/api/checklist_signals', methods=['GET'])
+def api_checklist_signals():
+    """CNN Fear & Greed + yfinance 기반 매수 6개 / 매도 5개 체크리스트 신호 산출"""
+    target_ticker = str(request.args.get("ticker", "SOXL")).strip().upper()
+    if target_ticker not in {"SOXL", "TQQQ", "QQQ", "SOXX", "^GSPC"}:
+        target_ticker = "SOXL"
+
+    fg_data = _fetch_cnn_fear_greed()
+    fg_score = fg_data.get("score")
+
+    tickers = ["^VIX", "^GSPC", "SOXX", "SOXL", "TQQQ", "QQQ"]
+    try:
+        raw_df = yf.download(
+            tickers=tickers,
+            period="5y",
+            interval="1d",
+            group_by="ticker",
+            auto_adjust=True,
+            progress=False,
+            threads=True
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Yahoo Finance 데이터 조회 실패: {e}"}), 500
+
+    vix_s = _extract_close_series(raw_df, "^VIX")
+    gspc_s = _extract_close_series(raw_df, "^GSPC")
+    soxx_s = _extract_close_series(raw_df, "SOXX")
+    target_s = _extract_close_series(raw_df, target_ticker)
+
+    vix_90d = []
+    vix_curr = None
+    vix_cond_met = False
+    vix_days_elapsed = None
+    if not vix_s.empty:
+        vix_curr = round(float(vix_s.iloc[-1]), 2)
+        for dt, val in vix_s.tail(90).items():
+            vix_90d.append({"date": dt.strftime("%Y-%m-%d"), "value": round(float(val), 2)})
+        latest_vix_dt = vix_s.index[-1]
+        recent_180 = vix_s[vix_s.index >= (latest_vix_dt - pd.Timedelta(days=180))]
+        high_dates = recent_180[recent_180 >= 30.0].index
+        if len(high_dates) > 0:
+            last_spike_dt = high_dates[-1]
+            vix_days_elapsed = int((latest_vix_dt - last_spike_dt).days)
+            if vix_days_elapsed >= 28:
+                vix_cond_met = True
+
+    gspc_mdd_52w = None
+    gspc_daily_ret = None
+    if len(gspc_s) >= 2:
+        gspc_curr = float(gspc_s.iloc[-1])
+        gspc_high_52w = float(gspc_s.tail(252).max())
+        if gspc_high_52w > 0:
+            gspc_mdd_52w = round(((gspc_curr / gspc_high_52w) - 1.0) * 100.0, 2)
+        gspc_prev = float(gspc_s.iloc[-2])
+        if gspc_prev > 0:
+            gspc_daily_ret = round(((gspc_curr / gspc_prev) - 1.0) * 100.0, 2)
+
+    soxx_curr = None
+    soxx_sma20 = None
+    soxx_disparity = None
+    soxx_cond_met = False
+    if len(soxx_s) >= 20:
+        soxx_curr = round(float(soxx_s.iloc[-1]), 2)
+        soxx_sma20 = round(float(soxx_s.tail(20).mean()), 2)
+        if soxx_sma20 > 0:
+            soxx_disparity = round(((soxx_curr / soxx_sma20) - 1.0) * 100.0, 2)
+            soxx_cond_met = soxx_curr <= (soxx_sma20 * 0.85)
+
+    target_curr = None
+    target_rsi = None
+    target_rsi_5d_peak = None
+    target_sma20 = None
+    target_sma20_disp = None
+    target_sma200d = None
+    target_sma200w = None
+    macd_curr = None
+    macd_sig_curr = None
+    macd_dead_cross = False
+
+    if len(target_s) >= 30:
+        target_curr = round(float(target_s.iloc[-1]), 2)
+        rsi_s = _calc_rsi_series(target_s, 14)
+        target_rsi = round(float(rsi_s.iloc[-1]), 2)
+        if len(rsi_s) >= 6:
+            target_rsi_5d_peak = round(float(rsi_s.iloc[-6:-1].max()), 2)
+
+        target_sma20 = round(float(target_s.tail(20).mean()), 2)
+        if target_sma20 > 0:
+            target_sma20_disp = round(((target_curr / target_sma20) - 1.0) * 100.0, 2)
+
+        if len(target_s) >= 200:
+            target_sma200d = round(float(target_s.tail(200).mean()), 2)
+        else:
+            target_sma200d = round(float(target_s.mean()), 2)
+
+        weekly_s = target_s.resample("W-FRI").last().dropna()
+        if len(weekly_s) >= 200:
+            target_sma200w = round(float(weekly_s.tail(200).mean()), 2)
+        elif not weekly_s.empty:
+            target_sma200w = round(float(weekly_s.mean()), 2)
+
+        ema12 = target_s.ewm(span=12, adjust=False).mean()
+        ema26 = target_s.ewm(span=26, adjust=False).mean()
+        macd_line = ema12 - ema26
+        sig_line = macd_line.ewm(span=9, adjust=False).mean()
+        macd_curr = round(float(macd_line.iloc[-1]), 3)
+        macd_sig_curr = round(float(sig_line.iloc[-1]), 3)
+        if len(macd_line) >= 2:
+            macd_dead_cross = bool(
+                (macd_line.iloc[-2] >= sig_line.iloc[-2]) and (macd_line.iloc[-1] < sig_line.iloc[-1])
+            )
+
+    buy_checklist = [
+        {
+            "id": "buy_fg",
+            "title": "CNN Fear & Greed 극단적 공포",
+            "rule": "Fear & Greed < 20",
+            "current": f"{fg_score}" if fg_score is not None else "N/A",
+            "met": bool(fg_score is not None and fg_score < 20.0)
+        },
+        {
+            "id": "buy_vix_28d",
+            "title": "VIX 30 돌파 후 1개월(28일) 경과",
+            "rule": "VIX ≥ 30 이후 28일+",
+            "current": f"현재 {vix_curr} / 경과 {vix_days_elapsed}일" if vix_days_elapsed is not None else f"현재 {vix_curr} (최근 180일 30↑ 없음)",
+            "met": bool(vix_cond_met)
+        },
+        {
+            "id": "buy_rsi",
+            "title": f"{target_ticker} RSI(14) 과매도",
+            "rule": "RSI(14) ≤ 30",
+            "current": f"{target_rsi}" if target_rsi is not None else "N/A",
+            "met": bool(target_rsi is not None and target_rsi <= 30.0)
+        },
+        {
+            "id": "buy_sp500_mdd",
+            "title": "S&P 500 52주 고점 대비 급락",
+            "rule": "52주 MDD ≤ -14%",
+            "current": f"{gspc_mdd_52w:+.2f}%" if gspc_mdd_52w is not None else "N/A",
+            "met": bool(gspc_mdd_52w is not None and gspc_mdd_52w <= -14.0)
+        },
+        {
+            "id": "buy_soxx_ma20",
+            "title": "SOXX 20일 이평선 과도 하회",
+            "rule": "종가 ≤ 20일선 × 0.85 (-15%)",
+            "current": f"${soxx_curr} (이격 {soxx_disparity:+.2f}%)" if soxx_curr is not None and soxx_disparity is not None else "N/A",
+            "met": bool(soxx_cond_met)
+        },
+        {
+            "id": "buy_200dw",
+            "title": f"{target_ticker} 200일선·200주선 동시 이탈",
+            "rule": "종가 < 200일선 AND < 200주선",
+            "current": f"${target_curr} (200D ${target_sma200d} / 200W ${target_sma200w})" if target_curr is not None else "N/A",
+            "met": bool(
+                target_curr is not None and target_sma200d is not None and target_sma200w is not None
+                and target_curr < target_sma200d and target_curr < target_sma200w
+            )
+        }
+    ]
+
+    sell_checklist = [
+        {
+            "id": "sell_fg",
+            "title": "CNN Fear & Greed 극단적 탐욕",
+            "rule": "Fear & Greed ≥ 80",
+            "current": f"{fg_score}" if fg_score is not None else "N/A",
+            "met": bool(fg_score is not None and fg_score >= 80.0)
+        },
+        {
+            "id": "sell_rsi_cross",
+            "title": f"{target_ticker} RSI 70 돌파 후 하향 이탈",
+            "rule": "최근 5일 > 70 후 현재 ≤ 70",
+            "current": f"현재 {target_rsi} (5일 최고 {target_rsi_5d_peak})" if target_rsi is not None else "N/A",
+            "met": bool(
+                target_rsi is not None and target_rsi_5d_peak is not None
+                and target_rsi_5d_peak > 70.0 and target_rsi <= 70.0
+            )
+        },
+        {
+            "id": "sell_ma20_over",
+            "title": f"{target_ticker} 20일 이평선 과열 이격",
+            "rule": "종가 ≥ 20일선 × 1.15 (+15%)",
+            "current": f"${target_curr} (이격 {target_sma20_disp:+.2f}%)" if target_curr is not None and target_sma20_disp is not None else "N/A",
+            "met": bool(
+                target_curr is not None and target_sma20 is not None and target_curr >= (target_sma20 * 1.15)
+            )
+        },
+        {
+            "id": "sell_macd_dc",
+            "title": f"{target_ticker} MACD(12,26,9) 데드크로스",
+            "rule": "MACD < Signal 하향 교차",
+            "current": f"MACD {macd_curr} / Sig {macd_sig_curr}" if macd_curr is not None else "N/A",
+            "met": bool(macd_dead_cross)
+        },
+        {
+            "id": "sell_sp500_drop",
+            "title": "S&P 500 일간 급락 경보",
+            "rule": "일간 수익률 ≤ -1.5%",
+            "current": f"{gspc_daily_ret:+.2f}%" if gspc_daily_ret is not None else "N/A",
+            "met": bool(gspc_daily_ret is not None and gspc_daily_ret <= -1.5)
+        }
+    ]
+
+    return jsonify({
+        "status": "success",
+        "target_ticker": target_ticker,
+        "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "fear_and_greed": fg_data,
+        "vix": {
+            "current": vix_curr,
+            "history_90d": vix_90d
+        },
+        "buy_checklist": buy_checklist,
+        "sell_checklist": sell_checklist,
+        "buy_on_count": sum(1 for item in buy_checklist if item["met"]),
+        "sell_on_count": sum(1 for item in sell_checklist if item["met"])
+    })
+
 
 # Vercel 서버 시작 시 즉시 내장 캐시 데이터를 메모리에 적재
 # if os.environ.get("VERCEL"):

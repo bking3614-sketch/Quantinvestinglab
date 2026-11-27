@@ -20,7 +20,10 @@
     market: 'ALL',
     weightMethod: 'EQUAL',
     activeFactorCategory: 'PRICE',
-    chartInstance: null
+    chartInstance: null,
+    lastScreenedStocks: [],
+    showAllocation: false,
+    currentInsightStock: null
   };
 
   // 팩터 카테고리별 기본 정렬 방향
@@ -39,6 +42,7 @@
     OP_MARGIN: 'DESC',
     DEBT_RATIO: 'ASC',
     CURRENT_RATIO: 'DESC',
+    F_SCORE: 'DESC',
     MOM_1M: 'DESC',
     MOM_3M: 'DESC',
     MOM_6M: 'DESC',
@@ -121,7 +125,46 @@
       statusBanner: document.getElementById('cqStatusBanner'),
       statusBannerMsg: document.getElementById('cqStatusBannerMsg'),
       statusBannerIcon: document.getElementById('cqStatusBannerIcon'),
-      statusBannerClose: document.getElementById('cqStatusBannerClose')
+      statusBannerClose: document.getElementById('cqStatusBannerClose'),
+      // AI 자연어 전략 빌더
+      nlInput: document.getElementById('cqNlInput'),
+      nlBuildBtn: document.getElementById('cqNlBuildBtn'),
+      nlChips: document.getElementById('cqNlChips'),
+      nlModeBadge: document.getElementById('cqNlModeBadge'),
+      nlApiToggleBtn: document.getElementById('cqNlApiToggleBtn'),
+      nlApiPanel: document.getElementById('cqNlApiPanel'),
+      nlLlmProvider: document.getElementById('cqNlLlmProvider'),
+      nlLlmApiKey: document.getElementById('cqNlLlmApiKey'),
+      nlApiSaveBtn: document.getElementById('cqNlApiSaveBtn'),
+      nlApiClearBtn: document.getElementById('cqNlApiClearBtn'),
+      nlSummary: document.getElementById('cqNlSummary'),
+      // 내 전략 프리셋 바
+      presetSyncBadge: document.getElementById('cqPresetSyncBadge'),
+      presetNameInput: document.getElementById('cqPresetNameInput'),
+      presetSaveBtn: document.getElementById('cqPresetSaveBtn'),
+      presetList: document.getElementById('cqPresetList'),
+      // 과최적화 검증 리포트
+      overfitCard: document.getElementById('cqOverfitCard'),
+      overfitRiskBadge: document.getElementById('cqOverfitRiskBadge'),
+      overfitSummary: document.getElementById('cqOverfitSummary'),
+      overfitRetention: document.getElementById('cqOverfitRetention'),
+      overfitPermCI: document.getElementById('cqOverfitPermCI'),
+      overfitTableBody: document.getElementById('cqOverfitTableBody'),
+      // 매수 금액 계산 토글 & 종목 인사이트 드로어
+      toggleAllocation: document.getElementById('cqToggleAllocation'),
+      insightBackdrop: document.getElementById('cqInsightBackdrop'),
+      insightDrawer: document.getElementById('cqInsightDrawer'),
+      insightCloseBtn: document.getElementById('cqInsightCloseBtn'),
+      insightTitle: document.getElementById('cqInsightTitle'),
+      insightTicker: document.getElementById('cqInsightTicker'),
+      insightMetricsStrip: document.getElementById('cqInsightMetricsStrip'),
+      insightAiBadge: document.getElementById('cqInsightAiBadge'),
+      insightAiList: document.getElementById('cqInsightAiList'),
+      insightDartMsg: document.getElementById('cqInsightDartMsg'),
+      insightDartKeyBox: document.getElementById('cqInsightDartKeyBox'),
+      insightDartKeyInput: document.getElementById('cqInsightDartKeyInput'),
+      insightDartKeySaveBtn: document.getElementById('cqInsightDartKeySaveBtn'),
+      insightDartList: document.getElementById('cqInsightDartList')
     };
   }
 
@@ -324,6 +367,7 @@
         <option value="DEBT_RATIO" ${metric === 'DEBT_RATIO' ? 'selected' : ''}>부채비율 (%)</option>
         <option value="MOM_12M" ${metric === 'MOM_12M' ? 'selected' : ''}>12M 모멘텀 (%)</option>
         <option value="DIV_YIELD" ${metric === 'DIV_YIELD' ? 'selected' : ''}>배당수익률 (%)</option>
+        <option value="F_SCORE" ${metric === 'F_SCORE' ? 'selected' : ''}>F-Score (0-9)</option>
       </select>
       <select class="cq-select cq-filter-op" style="width: 80px;">
         <option value="LTE" ${op === 'LTE' ? 'selected' : ''}>&le;</option>
@@ -805,7 +849,8 @@
       const valEl = row.querySelector('.cq-filter-val');
 
       if (!metricEl || !opEl || !valEl) return;
-      const metric = metricEl.value.toLowerCase();
+      const rawMetricVal = metricEl.value;
+      const metric = rawMetricVal === 'DIV_YIELD' ? 'dividend_yield' : rawMetricVal.toLowerCase();
       const rawOp = opEl.value;
       const op = opMap[rawOp] || '<=';
       const val = parseFloat(valEl.value);
@@ -850,6 +895,7 @@
       'OP_MARGIN': 'operating_margin',
       'DEBT_RATIO': 'debt_ratio',
       'CURRENT_RATIO': 'current_ratio',
+      'F_SCORE': 'f_score',
       'MOM_1M': 'momentum_1m',
       'MOM_3M': 'momentum_3m',
       'MOM_6M': 'momentum_6m',
@@ -939,9 +985,10 @@
       showStatusBanner(`종목 스크리닝 실패: ${err.message}`, 'error');
       alert(`종목 스크리닝 중 오류가 발생했습니다: ${err.message}`);
       if (dom.tableBody) {
+        const colSpan = state.showAllocation ? 13 : 11;
         dom.tableBody.innerHTML = `
           <tr>
-            <td colspan="10" style="text-align: center; color: #fca5a5; padding: 28px;">
+            <td colspan="${colSpan}" style="text-align: center; color: #fca5a5; padding: 28px;">
               <i class="fa-solid fa-triangle-exclamation"></i> 종목 스크리닝 실패: ${err.message}
             </td>
           </tr>
@@ -953,17 +1000,26 @@
     }
   }
 
+  function syncAllocationHeaderVisibility() {
+    document.querySelectorAll('#paneCustomQuant .cq-alloc-col').forEach(th => {
+      th.style.display = state.showAllocation ? '' : 'none';
+    });
+  }
+
   function renderScreeningTable(stocks) {
     if (!dom.tableBody) return;
+    state.lastScreenedStocks = Array.isArray(stocks) ? stocks : [];
+    syncAllocationHeaderVisibility();
 
     if (dom.screeningCount) {
-      dom.screeningCount.textContent = `총 ${stocks.length}개 종목 편입`;
+      dom.screeningCount.textContent = `총 ${state.lastScreenedStocks.length}개 종목 편입`;
     }
 
-    if (!stocks || stocks.length === 0) {
+    const colSpan = state.showAllocation ? 13 : 11;
+    if (state.lastScreenedStocks.length === 0) {
       dom.tableBody.innerHTML = `
         <tr>
-          <td colspan="10" style="text-align: center; color: var(--text-secondary); padding: 30px;">
+          <td colspan="${colSpan}" style="text-align: center; color: var(--text-secondary); padding: 30px;">
             설정된 필터 및 팩터 조건을 충족하는 종목이 없습니다. 필터 범위를 완화해 보세요.
           </td>
         </tr>
@@ -971,7 +1027,12 @@
       return;
     }
 
-    const rowsHtml = stocks.map((s, idx) => {
+    const totalCapital = parseFloat(dom.initCapital?.value || '10000000') || 10000000;
+    const topNCount = Math.max(1, parseInt(dom.topN?.value || '20', 10) || 20);
+    const targetWeightPct = 100.0 / topNCount;
+    const allocAmount = totalCapital / topNCount;
+
+    const rowsHtml = state.lastScreenedStocks.map((s, idx) => {
       const rank = s.rank || (idx + 1);
       const ticker = s.ticker || '-';
       const name = s.name || ticker;
@@ -992,6 +1053,13 @@
       const mom12m = s.momentum_12m !== undefined ? s.momentum_12m : (s.factors ? s.factors.momentum_12m : null);
       const marketCap = s.market_cap;
 
+      const allocCells = state.showAllocation
+        ? `
+          <td class="cq-alloc-pct">${targetWeightPct.toFixed(1)}%</td>
+          <td class="cq-alloc-amt">${formatCurrency(allocAmount, state.country)}</td>
+        `
+        : '';
+
       return `
         <tr>
           <td style="font-weight: 700; color: #6366f1;">${rank}</td>
@@ -1004,11 +1072,25 @@
           <td class="${roe > 0 ? 'text-positive' : ''}">${formatPercent(roe)}</td>
           <td class="${mom12m > 0 ? 'text-positive' : (mom12m < 0 ? 'text-negative' : '')}">${formatPercent(mom12m)}</td>
           <td style="font-size: 0.8rem; color: #cbd5e1;">${formatCap(marketCap, state.country)}</td>
+          ${allocCells}
+          <td>
+            <button type="button" class="cq-btn-insight" data-stock-idx="${idx}">
+              <i class="fa-solid fa-magnifying-glass-chart"></i> 공시/AI요약
+            </button>
+          </td>
         </tr>
       `;
     }).join('');
 
     dom.tableBody.innerHTML = rowsHtml;
+
+    dom.tableBody.querySelectorAll('.cq-btn-insight').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.stockIdx || '-1', 10);
+        const stock = state.lastScreenedStocks[idx];
+        if (stock) openStockInsightDrawer(stock);
+      });
+    });
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -1070,6 +1152,9 @@
       // 2) Chart.js 수익률 차트 렌더링
       renderBacktestChart(res);
 
+      // 2-1) 과최적화(부풀림) 검증 리포트 렌더링
+      renderOverfittingAnalysis(res.overfitting_analysis);
+
       // 3) 적용된 팩터 비중 배지 렌더링
       renderAppliedFactorWeights(res.latest_factor_weights || res.applied_factor_weights, res.optimization_diagnostics);
 
@@ -1088,6 +1173,68 @@
       hideLoading();
       setButtonLoading(dom.btnRunBacktest, false);
     }
+  }
+
+  function renderOverfittingAnalysis(overfit) {
+    if (!dom.overfitCard) return;
+    if (!overfit || !overfit.in_sample || !overfit.out_of_sample) {
+      dom.overfitCard.style.display = 'none';
+      return;
+    }
+
+    const grade = overfit.risk_grade || '주의';
+    const level = (overfit.risk_level || 'MEDIUM').toUpperCase();
+    if (dom.overfitRiskBadge) {
+      dom.overfitRiskBadge.textContent = `위험 등급: ${grade}`;
+      dom.overfitRiskBadge.className = 'cq-overfit-badge ' + (
+        level === 'LOW' ? 'risk-low' : (level === 'HIGH' ? 'risk-high' : 'risk-medium')
+      );
+    }
+
+    if (dom.overfitSummary) {
+      dom.overfitSummary.textContent = overfit.risk_comment || '';
+    }
+
+    if (dom.overfitRetention) {
+      const ret = Number(overfit.retention_rate || 0).toFixed(1);
+      const cagrRet = Number(overfit.cagr_retention || 0).toFixed(1);
+      const sharpeRet = Number(overfit.sharpe_retention || 0).toFixed(1);
+      dom.overfitRetention.textContent = `${ret}% (CAGR ${cagrRet}% · Sharpe ${sharpeRet}%)`;
+    }
+
+    if (dom.overfitPermCI && overfit.permutation) {
+      const p = overfit.permutation;
+      dom.overfitPermCI.textContent = `실제 -${Number(p.actual_mdd || 0).toFixed(2)}% (95% CI: -${Number(p.mdd_ci_low || 0).toFixed(2)}% ~ -${Number(p.mdd_ci_high || 0).toFixed(2)}%)`;
+    }
+
+    if (dom.overfitTableBody) {
+      const isSeg = overfit.in_sample;
+      const oosSeg = overfit.out_of_sample;
+      const rows = [
+        { label: '전반기 (In-Sample 학습)', seg: isSeg },
+        { label: '후반기 (Out-of-Sample 검증)', seg: oosSeg }
+      ];
+      dom.overfitTableBody.innerHTML = rows.map(r => {
+        const s = r.seg;
+        const cagr = Number(s.cagr || 0);
+        const mdd = Math.abs(Number(s.mdd || 0));
+        const sharpe = Number(s.sharpe || 0);
+        const winRate = Number(s.win_rate || 0);
+        const period = s.start_date && s.end_date ? `${s.start_date} ~ ${s.end_date}` : '-';
+        return `
+          <tr>
+            <td style="font-weight: 600;">${r.label}</td>
+            <td style="color: #94a3b8;">${period}</td>
+            <td class="${cagr >= 0 ? 'text-positive' : 'text-negative'}">${cagr >= 0 ? '+' : ''}${cagr.toFixed(2)}%</td>
+            <td class="text-negative">-${mdd.toFixed(2)}%</td>
+            <td>${sharpe.toFixed(2)}</td>
+            <td>${winRate.toFixed(1)}%</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    dom.overfitCard.style.display = 'flex';
   }
 
   function renderKPIs(res, initialCapital) {
@@ -1297,7 +1444,792 @@
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 10. 초기화 실행
+  // 10. 전략 UI 동기화 · AI 자연어 전략 빌더 · 내 전략 프리셋
+  // ─────────────────────────────────────────────────────────────
+  const PRESET_STORAGE_KEY = 'cq_strategy_presets_v1';
+
+  function loadCgApiSettings() {
+    try {
+      const raw = localStorage.getItem('cgApiSettings');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          llmProvider: parsed.llmProvider || 'gemini',
+          llmApiKey: parsed.llmApiKey || '',
+          ...parsed
+        };
+      }
+    } catch (e) {}
+    return { llmProvider: 'gemini', llmApiKey: '' };
+  }
+
+  function saveCgApiSettings(provider, apiKey) {
+    const existing = loadCgApiSettings();
+    const updated = {
+      ...existing,
+      llmProvider: provider || 'gemini',
+      llmApiKey: (apiKey || '').trim()
+    };
+    try {
+      localStorage.setItem('cgApiSettings', JSON.stringify(updated));
+    } catch (e) {}
+    return updated;
+  }
+
+  function updateNlModeBadge() {
+    if (!dom.nlModeBadge) return;
+    const settings = loadCgApiSettings();
+    if (settings.llmApiKey) {
+      const label = settings.llmProvider === 'openai' ? 'OpenAI 연결됨' : 'Gemini 연결됨';
+      dom.nlModeBadge.textContent = label;
+      dom.nlModeBadge.classList.add('llm-active');
+    } else {
+      dom.nlModeBadge.textContent = '로컬 키워드 파서';
+      dom.nlModeBadge.classList.remove('llm-active');
+    }
+  }
+
+  function collectFullStrategyState() {
+    const customFilters = [];
+    if (dom.filterList) {
+      dom.filterList.querySelectorAll('.cq-filter-row').forEach(row => {
+        const metricEl = row.querySelector('.cq-filter-metric');
+        const opEl = row.querySelector('.cq-filter-op');
+        const valEl = row.querySelector('.cq-filter-val');
+        if (!metricEl || !opEl || !valEl) return;
+        const val = parseFloat(valEl.value);
+        if (isNaN(val)) return;
+        customFilters.push({
+          metric: metricEl.value,
+          operator: opEl.value,
+          value: val
+        });
+      });
+    }
+
+    const factors = [];
+    if (dom.factorPool) {
+      dom.factorPool.querySelectorAll('.cq-factor-tag.selected').forEach(tag => {
+        factors.push({
+          metric: tag.dataset.factor,
+          direction: (tag.dataset.direction || DEFAULT_FACTOR_DIRECTIONS[tag.dataset.factor] || 'DESC').toUpperCase()
+        });
+      });
+    }
+
+    const weightCfg = collectWeightConfig();
+
+    return {
+      country: normalizeCountryCode(state.country),
+      market: state.market || 'ALL',
+      industry: dom.industrySelect ? dom.industrySelect.value : 'ALL',
+      general_filters: {
+        exclude_financials: !!dom.filterNoFinance?.checked,
+        exclude_holding: !!dom.filterNoHolding?.checked,
+        exclude_administrative: !!dom.filterNoManaged?.checked,
+        exclude_loss: !!dom.filterNoDeficitQuarter?.checked,
+        exclude_loss_annual: !!dom.filterNoDeficitAnnual?.checked,
+        exclude_china: !!dom.filterNoChinese?.checked,
+        small_cap_bottom_20: !!dom.filterSmallCapOnly?.checked
+      },
+      custom_filters: customFilters,
+      factors: factors,
+      weight_mode: state.weightMethod || 'EQUAL',
+      dynamic_weight_config: weightCfg.dynamic_weight_config || null,
+      optimize_weight_config: weightCfg.optimize_weight_config || null,
+      trading: {
+        benchmark: dom.benchmarkSelect ? dom.benchmarkSelect.value : 'AUTO',
+        start_date: dom.startDate ? dom.startDate.value : '2018-01-02',
+        end_date: dom.endDate ? dom.endDate.value : '',
+        initial_capital: dom.initCapital ? parseFloat(dom.initCapital.value) || 10000000 : 10000000,
+        rebalance_period: dom.rebalance ? dom.rebalance.value : 'Q',
+        top_n: dom.topN ? parseInt(dom.topN.value, 10) || 20 : 20,
+        cost_rate: dom.costRate ? parseFloat(dom.costRate.value) || 0.2 : 0.2
+      }
+    };
+  }
+
+  function applyStrategyToUI(strategy) {
+    if (!strategy || typeof strategy !== 'object') return;
+
+    // 1. Step 1: 국가 & 시장
+    const targetCountry = normalizeCountryCode(strategy.country || 'KR');
+    if (dom.countryGroup) {
+      const cBtn = dom.countryGroup.querySelector(`.cq-pill-btn[data-country="${targetCountry}"]`);
+      if (cBtn) cBtn.click();
+    }
+    const targetMarket = strategy.market || 'ALL';
+    if (dom.marketGroup) {
+      const mBtn = dom.marketGroup.querySelector(`.cq-pill-btn[data-market="${targetMarket}"]`);
+      if (mBtn && mBtn.style.display !== 'none') {
+        mBtn.click();
+      }
+    }
+
+    // 업종
+    if (dom.industrySelect && strategy.industry) {
+      const optExists = Array.from(dom.industrySelect.options).some(o => o.value === strategy.industry);
+      dom.industrySelect.value = optExists ? strategy.industry : 'ALL';
+    }
+
+    // 일반 필터
+    const gf = strategy.general_filters || {};
+    if (dom.filterNoFinance && gf.exclude_financials !== undefined) dom.filterNoFinance.checked = !!gf.exclude_financials;
+    if (dom.filterNoHolding && gf.exclude_holding !== undefined) dom.filterNoHolding.checked = !!gf.exclude_holding;
+    if (dom.filterNoManaged && gf.exclude_administrative !== undefined) dom.filterNoManaged.checked = !!gf.exclude_administrative;
+    if (dom.filterNoDeficitQuarter && gf.exclude_loss !== undefined) dom.filterNoDeficitQuarter.checked = !!gf.exclude_loss;
+    if (dom.filterNoDeficitAnnual && gf.exclude_loss_annual !== undefined) dom.filterNoDeficitAnnual.checked = !!gf.exclude_loss_annual;
+    if (dom.filterNoChinese && gf.exclude_china !== undefined) dom.filterNoChinese.checked = !!gf.exclude_china;
+    if (dom.filterSmallCapOnly && gf.small_cap_bottom_20 !== undefined) dom.filterSmallCapOnly.checked = !!gf.small_cap_bottom_20;
+
+    // 커스텀 필터
+    if (dom.filterList && Array.isArray(strategy.custom_filters)) {
+      dom.filterList.innerHTML = '';
+      const opNorm = { '<=': 'LTE', '>=': 'GTE', '<': 'LT', '>': 'GT', 'range': 'BETWEEN' };
+      strategy.custom_filters.forEach(cf => {
+        if (!cf || !cf.metric) return;
+        const metricKey = String(cf.metric).toUpperCase() === 'DIVIDEND_YIELD' ? 'DIV_YIELD' : String(cf.metric).toUpperCase();
+        const opKey = opNorm[cf.operator] || String(cf.operator || 'LTE').toUpperCase();
+        const val = cf.value !== undefined && cf.value !== null ? String(cf.value) : '';
+        if (val !== '') {
+          dom.filterList.appendChild(createFilterRow(metricKey, opKey, val));
+        }
+      });
+    }
+
+    // 2. Step 2: 팩터 선택
+    const factorAlias = {
+      'DIVIDEND_YIELD': 'DIV_YIELD',
+      'MOMENTUM_1M': 'MOM_1M',
+      'MOMENTUM_3M': 'MOM_3M',
+      'MOMENTUM_6M': 'MOM_6M',
+      'MOMENTUM_12M': 'MOM_12M',
+      'OPERATING_MARGIN': 'OP_MARGIN'
+    };
+    if (dom.factorPool && Array.isArray(strategy.factors)) {
+      dom.factorPool.querySelectorAll('.cq-factor-tag').forEach(tag => {
+        tag.classList.remove('selected');
+      });
+
+      let firstSelectedCat = null;
+      strategy.factors.forEach(f => {
+        const rawKey = (typeof f === 'string' ? f : (f && f.metric) || '').toUpperCase();
+        const fKey = factorAlias[rawKey] || rawKey;
+        const tag = dom.factorPool.querySelector(`.cq-factor-tag[data-factor="${fKey}"]`);
+        if (!tag) return;
+
+        const dir = ((typeof f === 'object' && f.direction) || DEFAULT_FACTOR_DIRECTIONS[fKey] || 'DESC').toUpperCase();
+        tag.classList.add('selected');
+        tag.dataset.direction = dir;
+        const badge = tag.querySelector('.order-badge');
+        if (badge) {
+          badge.innerHTML = dir === 'ASC' ? '오름차순 &darr;' : '내림차순 &uarr;';
+        }
+        if (!firstSelectedCat) {
+          firstSelectedCat = tag.dataset.cat;
+        }
+      });
+
+      if (firstSelectedCat && dom.factorCatNav) {
+        const catBtn = dom.factorCatNav.querySelector(`.cq-factor-cat-btn[data-cat="${firstSelectedCat}"]`);
+        if (catBtn) catBtn.click();
+      }
+    }
+
+    // 비중 산출 방식
+    const targetWeight = String(strategy.weight_mode || 'EQUAL').toUpperCase();
+    if (dom.weightGroup) {
+      const wBtn = dom.weightGroup.querySelector(`.cq-pill-btn[data-weight="${targetWeight}"]`);
+      if (wBtn) wBtn.click();
+    }
+
+    if (targetWeight === 'DYNAMIC' && strategy.dynamic_weight_config) {
+      const dw = strategy.dynamic_weight_config;
+      if (dom.dynamicMethodSelect && dw.method) {
+        dom.dynamicMethodSelect.value = dw.method;
+        updateDynamicWeightUI();
+      }
+      if (dom.dynamicLookback && dw.lookback) dom.dynamicLookback.value = dw.lookback;
+      if (dom.dynamicUnit && dw.unit) dom.dynamicUnit.value = dw.unit;
+      if (dom.dynamicLambda && dw.lambda_val !== undefined) {
+        dom.dynamicLambda.value = dw.lambda_val;
+        if (dom.dynamicLambdaVal) dom.dynamicLambdaVal.textContent = Number(dw.lambda_val).toFixed(2);
+      }
+      if (dw.method === 'manual' && dw.manual_weights && dom.manualWeightList) {
+        renderManualWeightInputs();
+        dom.manualWeightList.querySelectorAll('.cq-manual-weight-input').forEach(inp => {
+          const fk = inp.dataset.factor;
+          if (fk && dw.manual_weights[fk] !== undefined) {
+            inp.value = dw.manual_weights[fk];
+          }
+        });
+        updateManualWeightSum();
+      }
+    } else if (targetWeight === 'OPTIMIZE' && strategy.optimize_weight_config) {
+      const ow = strategy.optimize_weight_config;
+      if (dom.optObjectiveSelect && ow.objective) dom.optObjectiveSelect.value = ow.objective;
+      if (dom.optLookback && ow.lookback) dom.optLookback.value = ow.lookback;
+      if (dom.optMinWeight && ow.min_weight !== undefined) dom.optMinWeight.value = ow.min_weight;
+      if (dom.optMaxWeight && ow.max_weight !== undefined) dom.optMaxWeight.value = ow.max_weight;
+      if (dom.optLambda && ow.lambda_val !== undefined) {
+        dom.optLambda.value = ow.lambda_val;
+        if (dom.optLambdaVal) dom.optLambdaVal.textContent = Number(ow.lambda_val).toFixed(2);
+      }
+      if (dom.optEta && ow.eta_val !== undefined) {
+        dom.optEta.value = ow.eta_val;
+        if (dom.optEtaVal) dom.optEtaVal.textContent = Number(ow.eta_val).toFixed(2);
+      }
+      if (dom.optShrinkage && ow.shrinkage !== undefined) dom.optShrinkage.checked = !!ow.shrinkage;
+      if (dom.optFlipNegativeIC && ow.flip_negative_ic !== undefined) dom.optFlipNegativeIC.checked = !!ow.flip_negative_ic;
+    }
+
+    // 3. Step 3: 트레이딩 설정
+    const tr = strategy.trading || {};
+    const topNVal = tr.top_n !== undefined ? tr.top_n : strategy.top_n;
+    if (dom.topN && topNVal !== undefined) dom.topN.value = topNVal;
+    if (dom.benchmarkSelect && tr.benchmark) dom.benchmarkSelect.value = tr.benchmark;
+    if (dom.startDate && tr.start_date) dom.startDate.value = tr.start_date;
+    if (dom.endDate && tr.end_date) dom.endDate.value = tr.end_date;
+    if (dom.initCapital && tr.initial_capital) dom.initCapital.value = tr.initial_capital;
+    if (dom.rebalance && tr.rebalance_period) dom.rebalance.value = tr.rebalance_period;
+    if (dom.costRate && tr.cost_rate !== undefined) dom.costRate.value = tr.cost_rate;
+  }
+
+  function clientFallbackKeywordParser(query) {
+    const q = (query || '').toLowerCase();
+    let country = 'KR';
+    let market = 'ALL';
+    if (q.includes('미국') || q.includes('us') || q.includes('s&p')) {
+      country = 'US';
+      if (q.includes('s&p')) market = 'S&P500';
+    } else if (q.includes('일본')) {
+      country = 'JP';
+    } else if (q.includes('홍콩')) {
+      country = 'HK';
+    } else if (q.includes('코스피')) {
+      market = 'KOSPI';
+    } else if (q.includes('코스닥')) {
+      market = 'KOSDAQ';
+    }
+
+    const customFilters = [];
+    const perM = q.match(/per\s*([0-9]+(?:\.[0-9]+)?)\s*(이하|미만|이상|초과)?/);
+    if (perM) customFilters.push({ metric: 'PER', operator: perM[2] === '이상' ? 'GTE' : 'LTE', value: parseFloat(perM[1]) });
+    const roeM = q.match(/roe\s*([0-9]+(?:\.[0-9]+)?)\s*%?\s*(이하|미만|이상|초과)?/);
+    if (roeM) customFilters.push({ metric: 'ROE', operator: roeM[2] === '이하' ? 'LTE' : 'GTE', value: parseFloat(roeM[1]) });
+    const fM = q.match(/f[\s\-_]?score\s*([0-9]+(?:\.[0-9]+)?)\s*점?\s*(이하|미만|이상|초과)?/);
+    if (fM) customFilters.push({ metric: 'F_SCORE', operator: 'GTE', value: parseFloat(fM[1]) });
+    if (q.includes('저부채')) customFilters.push({ metric: 'DEBT_RATIO', operator: 'LTE', value: 100 });
+    if (q.includes('고배당')) customFilters.push({ metric: 'DIV_YIELD', operator: 'GTE', value: 3.0 });
+    if (q.includes('저pbr') || q.includes('저 pbr')) customFilters.push({ metric: 'PBR', operator: 'LTE', value: 1.2 });
+
+    const factors = [];
+    if (q.includes('per') || q.includes('가치')) factors.push({ metric: 'PER', direction: 'ASC' });
+    if (q.includes('pbr') || q.includes('가치')) factors.push({ metric: 'PBR', direction: 'ASC' });
+    if (q.includes('roe') || q.includes('우량') || q.includes('퀄리티')) factors.push({ metric: 'ROE', direction: 'DESC' });
+    if (q.includes('12m') || q.includes('모멘텀')) factors.push({ metric: 'MOM_12M', direction: 'DESC' });
+    if (q.includes('배당')) factors.push({ metric: 'DIV_YIELD', direction: 'DESC' });
+    if (q.includes('부채')) factors.push({ metric: 'DEBT_RATIO', direction: 'ASC' });
+    if (q.includes('f-score') || q.includes('fscore')) factors.push({ metric: 'F_SCORE', direction: 'DESC' });
+    if (factors.length === 0) {
+      factors.push({ metric: 'PER', direction: 'ASC' }, { metric: 'ROE', direction: 'DESC' });
+    }
+
+    return {
+      mode: 'local_fallback',
+      summary: `${country} · 로컬 키워드 파서 적용`,
+      strategy: {
+        country,
+        market,
+        industry: 'ALL',
+        general_filters: {
+          exclude_financials: true,
+          exclude_holding: true,
+          exclude_administrative: true,
+          exclude_loss: true,
+          exclude_loss_annual: false,
+          exclude_china: true,
+          small_cap_bottom_20: q.includes('소형주')
+        },
+        custom_filters: customFilters,
+        factors,
+        weight_mode: 'EQUAL',
+        top_n: 20
+      }
+    };
+  }
+
+  async function runNlToStrategy(rawQuery) {
+    const query = (rawQuery || (dom.nlInput ? dom.nlInput.value : '') || '').trim();
+    if (!query) {
+      showStatusBanner('자연어 전략 설명을 입력해 주세요.', 'warning');
+      if (dom.nlInput) dom.nlInput.focus();
+      return;
+    }
+
+    const settings = loadCgApiSettings();
+    setButtonLoading(dom.nlBuildBtn, true, '전략 생성 중...');
+
+    let resultData = null;
+    try {
+      const resp = await fetch('/api/custom_quant/nl_to_strategy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query,
+          llm_provider: settings.llmProvider || 'gemini',
+          llm_api_key: settings.llmApiKey || ''
+        })
+      });
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json.status === 'success' && json.strategy) {
+          resultData = json;
+        }
+      }
+    } catch (err) {
+      console.warn('[Custom Quant] /nl_to_strategy 요청 실패, 클라이언트 폴백 사용:', err);
+    } finally {
+      setButtonLoading(dom.nlBuildBtn, false);
+    }
+
+    if (!resultData) {
+      resultData = clientFallbackKeywordParser(query);
+    }
+
+    applyStrategyToUI(resultData.strategy);
+
+    if (dom.nlSummary) {
+      const modeTag = resultData.mode === 'llm' ? 'AI LLM' : '로컬 키워드 파서';
+      dom.nlSummary.innerHTML = `
+        <i class="fa-solid fa-circle-check"></i>
+        <span><strong>[${modeTag}]</strong> ${resultData.summary || '전략이 Step 1~3에 반영되었습니다.'}</span>
+      `;
+      dom.nlSummary.style.display = 'flex';
+    }
+
+    await runScreening();
+  }
+
+  function setupNlBuilder() {
+    const settings = loadCgApiSettings();
+    if (dom.nlLlmProvider) dom.nlLlmProvider.value = settings.llmProvider || 'gemini';
+    if (dom.nlLlmApiKey) dom.nlLlmApiKey.value = settings.llmApiKey || '';
+    updateNlModeBadge();
+
+    if (dom.nlApiToggleBtn && dom.nlApiPanel) {
+      dom.nlApiToggleBtn.addEventListener('click', () => {
+        const isOpen = dom.nlApiPanel.style.display !== 'none';
+        dom.nlApiPanel.style.display = isOpen ? 'none' : 'block';
+        dom.nlApiToggleBtn.classList.toggle('active', !isOpen);
+      });
+    }
+
+    if (dom.nlApiSaveBtn) {
+      dom.nlApiSaveBtn.addEventListener('click', () => {
+        const prov = dom.nlLlmProvider ? dom.nlLlmProvider.value : 'gemini';
+        const key = dom.nlLlmApiKey ? dom.nlLlmApiKey.value : '';
+        saveCgApiSettings(prov, key);
+        updateNlModeBadge();
+        if (dom.nlApiPanel) dom.nlApiPanel.style.display = 'none';
+        if (dom.nlApiToggleBtn) dom.nlApiToggleBtn.classList.remove('active');
+        showStatusBanner(
+          key.trim() ? `LLM API 설정이 저장되었습니다 (${prov.toUpperCase()}).` : 'API 키가 비워져 로컬 키워드 파서 모드로 전환되었습니다.',
+          'success'
+        );
+      });
+    }
+
+    if (dom.nlApiClearBtn) {
+      dom.nlApiClearBtn.addEventListener('click', () => {
+        if (dom.nlLlmApiKey) dom.nlLlmApiKey.value = '';
+        const prov = dom.nlLlmProvider ? dom.nlLlmProvider.value : 'gemini';
+        saveCgApiSettings(prov, '');
+        updateNlModeBadge();
+        showStatusBanner('LLM API 키가 초기화되었습니다. (로컬 키워드 파서 사용)', 'success');
+      });
+    }
+
+    if (dom.nlBuildBtn) {
+      dom.nlBuildBtn.addEventListener('click', () => runNlToStrategy());
+    }
+
+    if (dom.nlInput) {
+      dom.nlInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          runNlToStrategy();
+        }
+      });
+    }
+
+    if (dom.nlChips) {
+      dom.nlChips.querySelectorAll('.cq-nl-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          const q = chip.dataset.query || chip.textContent.trim();
+          if (dom.nlInput) dom.nlInput.value = q;
+          runNlToStrategy(q);
+        });
+      });
+    }
+  }
+
+  // ── 내 전략 프리셋 저장/불러오기 (localStorage + window.supabase 동기화 구조) ──
+  const PresetStore = {
+    loadLocal() {
+      try {
+        const raw = localStorage.getItem(PRESET_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    },
+
+    saveLocal(presets) {
+      try {
+        localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(presets));
+      } catch (e) {}
+    },
+
+    async getSupabaseUser() {
+      try {
+        if (window.supabase && window.supabase.auth && typeof window.supabase.auth.getUser === 'function') {
+          const { data } = await window.supabase.auth.getUser();
+          return data && data.user ? data.user : null;
+        }
+      } catch (e) {}
+      return null;
+    },
+
+    async syncFromCloud() {
+      const user = await this.getSupabaseUser();
+      if (!user) return { synced: false, presets: this.loadLocal() };
+      try {
+        const { data, error } = await window.supabase
+          .from('custom_quant_presets')
+          .select('id, name, config, updated_at')
+          .eq('user_id', user.id)
+          .order('updated_at', { ascending: false });
+        if (!error && Array.isArray(data)) {
+          const cloudPresets = data.map(row => ({
+            id: row.id,
+            name: row.name,
+            config: row.config,
+            updatedAt: row.updated_at
+          }));
+          // 로컬과 병합 (클라우드 우선)
+          const mergedMap = new Map();
+          this.loadLocal().forEach(p => mergedMap.set(p.id, p));
+          cloudPresets.forEach(p => mergedMap.set(p.id, p));
+          const merged = Array.from(mergedMap.values());
+          this.saveLocal(merged);
+          return { synced: true, presets: merged };
+        }
+      } catch (e) {
+        console.warn('[Custom Quant] Supabase 프리셋 동기화 대기/건너뜀:', e);
+      }
+      return { synced: true, presets: this.loadLocal() };
+    },
+
+    async pushToCloud(preset) {
+      const user = await this.getSupabaseUser();
+      if (!user) return false;
+      try {
+        await window.supabase.from('custom_quant_presets').upsert({
+          id: preset.id,
+          user_id: user.id,
+          name: preset.name,
+          config: preset.config,
+          updated_at: preset.updatedAt
+        });
+        return true;
+      } catch (e) {
+        console.warn('[Custom Quant] Supabase 프리셋 업로드 건너뜀:', e);
+        return false;
+      }
+    },
+
+    async deleteFromCloud(presetId) {
+      const user = await this.getSupabaseUser();
+      if (!user) return false;
+      try {
+        await window.supabase
+          .from('custom_quant_presets')
+          .delete()
+          .eq('id', presetId)
+          .eq('user_id', user.id);
+        return true;
+      } catch (e) {
+        console.warn('[Custom Quant] Supabase 프리셋 삭제 건너뜀:', e);
+        return false;
+      }
+    }
+  };
+
+  let activePresetId = null;
+
+  function renderPresetList(presets) {
+    if (!dom.presetList) return;
+    if (!presets || presets.length === 0) {
+      dom.presetList.innerHTML = `
+        <span class="cq-preset-empty">저장된 프리셋이 없습니다. 현재 조건을 이름으로 저장해 원클릭으로 복원하세요.</span>
+      `;
+      return;
+    }
+
+    dom.presetList.innerHTML = '';
+    presets.forEach(preset => {
+      const chip = document.createElement('div');
+      chip.className = `cq-preset-chip${preset.id === activePresetId ? ' active' : ''}`;
+      const country = preset.config?.country || 'KR';
+      const factorCount = Array.isArray(preset.config?.factors) ? preset.config.factors.length : 0;
+
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = preset.name;
+
+      const metaSpan = document.createElement('span');
+      metaSpan.className = 'cq-preset-chip-meta';
+      metaSpan.textContent = `${country} · ${factorCount}팩터`;
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'cq-preset-chip-del';
+      delBtn.title = '프리셋 삭제';
+      delBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+      delBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const remaining = PresetStore.loadLocal().filter(p => p.id !== preset.id);
+        PresetStore.saveLocal(remaining);
+        if (activePresetId === preset.id) activePresetId = null;
+        renderPresetList(remaining);
+        await PresetStore.deleteFromCloud(preset.id);
+        showStatusBanner(`프리셋 "${preset.name}"이(가) 삭제되었습니다.`, 'success');
+      });
+
+      chip.appendChild(labelSpan);
+      chip.appendChild(metaSpan);
+      chip.appendChild(delBtn);
+
+      chip.addEventListener('click', () => {
+        activePresetId = preset.id;
+        applyStrategyToUI(preset.config);
+        renderPresetList(PresetStore.loadLocal());
+        showStatusBanner(`프리셋 "${preset.name}" 조건을 복원했습니다.`, 'success');
+      });
+
+      dom.presetList.appendChild(chip);
+    });
+  }
+
+  async function setupPresetBar() {
+    const initialPresets = PresetStore.loadLocal();
+    renderPresetList(initialPresets);
+
+    if (dom.presetSaveBtn) {
+      dom.presetSaveBtn.addEventListener('click', async () => {
+        const name = (dom.presetNameInput ? dom.presetNameInput.value : '').trim();
+        if (!name) {
+          showStatusBanner('저장할 프리셋 이름을 입력해 주세요.', 'warning');
+          if (dom.presetNameInput) dom.presetNameInput.focus();
+          return;
+        }
+
+        const now = new Date().toISOString();
+        const presets = PresetStore.loadLocal();
+        const existingIdx = presets.findIndex(p => p.name === name);
+        const presetObj = {
+          id: existingIdx >= 0 ? presets[existingIdx].id : `cq_${Date.now()}`,
+          name,
+          config: collectFullStrategyState(),
+          updatedAt: now
+        };
+
+        if (existingIdx >= 0) {
+          presets[existingIdx] = presetObj;
+        } else {
+          presets.unshift(presetObj);
+        }
+
+        PresetStore.saveLocal(presets);
+        activePresetId = presetObj.id;
+        if (dom.presetNameInput) dom.presetNameInput.value = '';
+        renderPresetList(presets);
+
+        await PresetStore.pushToCloud(presetObj);
+        showStatusBanner(`전략 프리셋 "${name}"이(가) 저장되었습니다.`, 'success');
+      });
+    }
+
+    if (dom.presetNameInput) {
+      dom.presetNameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && dom.presetSaveBtn) {
+          e.preventDefault();
+          dom.presetSaveBtn.click();
+        }
+      });
+    }
+
+    // Supabase 로그인 상태 확인 및 클라우드 동기화
+    const syncRes = await PresetStore.syncFromCloud();
+    if (dom.presetSyncBadge) {
+      if (syncRes.synced) {
+        dom.presetSyncBadge.textContent = '클라우드 동기화';
+        dom.presetSyncBadge.classList.add('cloud');
+      } else {
+        dom.presetSyncBadge.textContent = '로컬 저장';
+        dom.presetSyncBadge.classList.remove('cloud');
+      }
+    }
+    if (syncRes.synced) {
+      renderPresetList(syncRes.presets);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 11. 종목별 DART 공시 및 AI 요약 드로어 & 매수 금액 토글
+  // ─────────────────────────────────────────────────────────────
+  function closeStockInsightDrawer() {
+    if (dom.insightDrawer) {
+      dom.insightDrawer.classList.remove('open');
+      dom.insightDrawer.setAttribute('aria-hidden', 'true');
+    }
+    if (dom.insightBackdrop) {
+      dom.insightBackdrop.style.display = 'none';
+    }
+  }
+
+  async function openStockInsightDrawer(stock) {
+    if (!stock || !dom.insightDrawer) return;
+    state.currentInsightStock = stock;
+
+    const ticker = stock.ticker || '-';
+    const name = stock.name || ticker;
+    const per = stock.per !== undefined ? stock.per : stock.factors?.per;
+    const pbr = stock.pbr !== undefined ? stock.pbr : stock.factors?.pbr;
+    const roe = stock.roe !== undefined ? stock.roe : stock.factors?.roe;
+    const mom12 = stock.momentum_12m !== undefined ? stock.momentum_12m : stock.factors?.momentum_12m;
+
+    if (dom.insightTitle) dom.insightTitle.textContent = name;
+    if (dom.insightTicker) dom.insightTicker.textContent = ticker;
+    if (dom.insightMetricsStrip) {
+      dom.insightMetricsStrip.innerHTML = `
+        <div class="cq-insight-metric-pill"><span>PER</span><strong>${formatNumber(per, 1)}</strong></div>
+        <div class="cq-insight-metric-pill"><span>PBR</span><strong>${formatNumber(pbr, 2)}</strong></div>
+        <div class="cq-insight-metric-pill"><span>ROE</span><strong>${formatPercent(roe)}</strong></div>
+        <div class="cq-insight-metric-pill"><span>12M 모멘텀</span><strong>${formatPercent(mom12)}</strong></div>
+      `;
+    }
+
+    if (dom.insightAiList) {
+      dom.insightAiList.innerHTML = '<li><i class="fa-solid fa-spinner fa-spin"></i> AI 핵심 요약을 생성하는 중...</li>';
+    }
+    if (dom.insightDartMsg) dom.insightDartMsg.textContent = '최근 3개월 DART 공시를 조회하는 중...';
+    if (dom.insightDartList) dom.insightDartList.innerHTML = '';
+    if (dom.insightDartKeyBox) dom.insightDartKeyBox.style.display = 'none';
+
+    if (dom.insightBackdrop) dom.insightBackdrop.style.display = 'block';
+    dom.insightDrawer.classList.add('open');
+    dom.insightDrawer.setAttribute('aria-hidden', 'false');
+
+    const apiSettings = loadCgApiSettings();
+    const dartKey = localStorage.getItem('cg_opendart_api_key') || '';
+
+    try {
+      const resp = await fetch('/api/custom_quant/stock_insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticker,
+          name,
+          country: normalizeCountryCode(state.country),
+          metrics: { per, pbr, roe, momentum_12m: mom12, f_score: stock.f_score },
+          dart_api_key: dartKey,
+          llm_provider: apiSettings.llmProvider || 'gemini',
+          llm_api_key: apiSettings.llmApiKey || ''
+        })
+      });
+      const res = await resp.json();
+      if (!resp.ok || res.status === 'error') {
+        throw new Error(res.message || `서버 오류 (${resp.status})`);
+      }
+
+      if (dom.insightAiBadge) {
+        const isLlm = res.ai_mode === 'llm';
+        dom.insightAiBadge.textContent = isLlm ? 'AI LLM' : '퀀트 요약';
+        dom.insightAiBadge.classList.toggle('llm-active', isLlm);
+      }
+
+      if (dom.insightAiList) {
+        const lines = Array.isArray(res.ai_summary) ? res.ai_summary : [];
+        dom.insightAiList.innerHTML = lines.length
+          ? lines.map(line => `<li>${line}</li>`).join('')
+          : '<li>요약 정보를 생성할 수 없습니다.</li>';
+      }
+
+      if (dom.insightDartMsg) {
+        dom.insightDartMsg.textContent = res.dart_message || '';
+      }
+
+      if (dom.insightDartKeyBox) {
+        dom.insightDartKeyBox.style.display = res.dart_status === 'no_key' ? 'flex' : 'none';
+      }
+
+      if (dom.insightDartList) {
+        const discs = Array.isArray(res.disclosures) ? res.disclosures : [];
+        dom.insightDartList.innerHTML = discs.map(d => `
+          <a class="cq-drawer-dart-item" href="${d.url || '#'}" target="_blank" rel="noopener noreferrer">
+            <span class="cq-drawer-dart-title">${d.title}</span>
+            <span class="cq-drawer-dart-meta">
+              <span>${d.date || '-'}</span>
+              <span>${d.submitter || ''} <i class="fa-solid fa-arrow-up-right-from-square"></i></span>
+            </span>
+          </a>
+        `).join('');
+      }
+    } catch (err) {
+      if (dom.insightAiList) {
+        dom.insightAiList.innerHTML = `<li style="color:#fca5a5;">인사이트 조회 실패: ${err.message}</li>`;
+      }
+      if (dom.insightDartMsg) dom.insightDartMsg.textContent = '';
+    }
+  }
+
+  function setupTableEnhancements() {
+    if (dom.toggleAllocation) {
+      state.showAllocation = !!dom.toggleAllocation.checked;
+      dom.toggleAllocation.addEventListener('change', () => {
+        state.showAllocation = !!dom.toggleAllocation.checked;
+        renderScreeningTable(state.lastScreenedStocks);
+      });
+    }
+
+    const rerenderAllocIfActive = () => {
+      if (state.showAllocation && state.lastScreenedStocks.length > 0) {
+        renderScreeningTable(state.lastScreenedStocks);
+      }
+    };
+    if (dom.initCapital) dom.initCapital.addEventListener('input', rerenderAllocIfActive);
+    if (dom.topN) dom.topN.addEventListener('input', rerenderAllocIfActive);
+
+    if (dom.insightCloseBtn) dom.insightCloseBtn.addEventListener('click', closeStockInsightDrawer);
+    if (dom.insightBackdrop) dom.insightBackdrop.addEventListener('click', closeStockInsightDrawer);
+    if (dom.insightDartKeySaveBtn && dom.insightDartKeyInput) {
+      dom.insightDartKeySaveBtn.addEventListener('click', () => {
+        const key = dom.insightDartKeyInput.value.trim();
+        if (!key) return;
+        try {
+          localStorage.setItem('cg_opendart_api_key', key);
+        } catch (e) {}
+        if (state.currentInsightStock) {
+          openStockInsightDrawer(state.currentInsightStock);
+        }
+      });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 12. 초기화 실행
   // ─────────────────────────────────────────────────────────────
   function init() {
     initDomReferences();
@@ -1311,6 +2243,9 @@
     setupCustomFilters();
     setupFactorSelection();
     setupDynamicWeight();
+    setupNlBuilder();
+    setupPresetBar();
+    setupTableEnhancements();
 
     if (dom.btnRunScreen) {
       dom.btnRunScreen.addEventListener('click', runScreening);
@@ -1328,6 +2263,9 @@
     window.customQuant = {
       runScreening,
       runBacktest,
+      runNlToStrategy,
+      applyStrategyToUI,
+      collectFullStrategyState,
       state
     };
   }

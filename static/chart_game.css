@@ -2068,3 +2068,864 @@
     max-width: 92vw !important;
   }
 }
+
+/* ==========================================================================
+   [4] 태블릿(<=1366px) & 스마트폰(<=640px) 차트게임 원스크린 플레이 & 탭바 스크롤
+   (PC 1367px 이상 원본 레이아웃 100% 유지)
+   ========================================================================== */
+@media (max-width: 1366px) {
+  .main-tab-nav {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    white-space: nowrap !important;
+  }
+
+  .main-tab-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .main-tab-nav .tab-btn {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+  }
+}
+
+@media (max-width: 640px) {
+  /* 하단 고정 독에 가려지지 않도록 여백 확보 */
+  #paneChartGame {
+    padding-bottom: 155px !important;
+  }
+
+  /* 차트 패널: 세로 툴바를 차트 바로 위 가로 퀵바로 전환 */
+  #paneChartGame .cg-chart-panel {
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 8px !important;
+    gap: 8px !important;
+  }
+
+  #paneChartGame .cg-quick-toolbar {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    width: 100% !important;
+    height: auto !important;
+    padding: 4px 6px !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    border-right: none !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  }
+
+  #paneChartGame .cg-quick-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  #paneChartGame .cg-quick-toolbar .cg-tool-btn {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 42px !important;
+    height: 30px !important;
+    padding: 0 10px !important;
+    font-size: 0.72rem !important;
+  }
+
+  /* 첫 화면 안에 메인 캔들(235px) + RSI(82px) + 거래량(82px) 모두 수용 */
+  #paneChartGame .cg-chart-stage {
+    min-height: 0 !important;
+    gap: 6px !important;
+  }
+
+  #paneChartGame .cg-chart-header-overlay {
+    padding: 4px 6px !important;
+    font-size: 0.68rem !important;
+  }
+
+  #paneChartGame #cgMainChart,
+  #paneChartGame .cg-chart-container {
+    height: 235px !important;
+    min-height: 235px !important;
+    max-height: 235px !important;
+  }
+
+  #paneChartGame .cg-sub-pane {
+    padding: 4px 6px !important;
+  }
+
+  #paneChartGame .cg-sub-header {
+    padding: 2px 4px !important;
+    font-size: 0.7rem !important;
+  }
+
+  #paneChartGame #cgRsiChart,
+  #paneChartGame #cgVolumeChart,
+  #paneChartGame .cg-sub-chart {
+    height: 82px !important;
+    min-height: 82px !important;
+    max-height: 82px !important;
+  }
+
+  /* 매수/다음/매도 및 주문 비중 카드를 화면 최하단 고정 독으로 배치 */
+  #paneChartGame .cg-trading-panel > .cg-card:nth-child(3) {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 1050 !important;
+    margin: 0 !important;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+    border-radius: 14px 14px 0 0 !important;
+    background: rgba(15, 23, 42, 0.96) !important;
+    backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(99, 102, 241, 0.45) !important;
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.55) !important;
+  }
+}
+
+/* ==========================================================================
+   [5] 차트 트레이닝 센터 로비 (#cgLobbyView) & 커리어 모드 자본금 잠금 UI
+   ========================================================================== */
+.cg-lobby-view {
+  max-width: 1080px;
+  margin: 24px auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.cg-lobby-hero {
+  text-align: center;
+  padding: 26px 20px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.14) 0%, rgba(15, 23, 42, 0.92) 55%, rgba(16, 185, 129, 0.1) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.cg-lobby-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.2);
+  border: 1px solid rgba(129, 140, 248, 0.45);
+  color: #c7d2fe;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.cg-lobby-title {
+  margin: 14px 0 8px;
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: #f8fafc;
+  letter-spacing: -0.02em;
+}
+
+.cg-lobby-subtitle {
+  margin: 0 auto;
+  max-width: 620px;
+  font-size: 0.9rem;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.cg-lobby-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+@media (max-width: 780px) {
+  .cg-lobby-cards {
+    grid-template-columns: 1fr;
+  }
+  .cg-lobby-title {
+    font-size: 1.4rem;
+  }
+}
+
+.cg-lobby-card {
+  background: var(--bg-card, #161b26);
+  border: 1px solid var(--border-color, #232d3f);
+  border-radius: 14px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.cg-lobby-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+.cg-lobby-card.career {
+  border-color: rgba(16, 185, 129, 0.32);
+}
+
+.cg-lobby-card.career:hover {
+  border-color: rgba(16, 185, 129, 0.65);
+}
+
+.cg-lobby-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cg-lobby-mode-tag {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.cg-lobby-mode-tag.practice {
+  background: rgba(59, 130, 246, 0.16);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.cg-lobby-mode-tag.career {
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.cg-lobby-card-icon {
+  font-size: 1.25rem;
+  color: #60a5fa;
+}
+
+.cg-lobby-card-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.cg-lobby-card-desc {
+  margin: 0;
+  font-size: 0.84rem;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.cg-lobby-feature-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  flex: 1;
+}
+
+.cg-lobby-feature-list i {
+  color: #38bdf8;
+  margin-right: 6px;
+}
+
+.cg-career-stats-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 12px;
+  flex: 1;
+}
+
+.cg-career-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cg-career-stat span {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.cg-career-stat strong {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  color: #f8fafc;
+}
+
+.cg-tier-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.cg-tier-badge.tier-bronze {
+  background: rgba(180, 83, 9, 0.22);
+  border-color: rgba(217, 119, 6, 0.5);
+  color: #fbbf24;
+}
+
+.cg-tier-badge.tier-silver {
+  background: rgba(148, 163, 184, 0.22);
+  border-color: rgba(203, 213, 225, 0.5);
+  color: #e2e8f0;
+}
+
+.cg-tier-badge.tier-gold {
+  background: rgba(234, 179, 8, 0.22);
+  border-color: rgba(250, 204, 21, 0.55);
+  color: #fde047;
+}
+
+.cg-tier-badge.tier-platinum {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.55);
+  color: #7dd3fc;
+}
+
+.cg-tier-badge.tier-oracle {
+  background: rgba(168, 85, 247, 0.24);
+  border-color: rgba(192, 132, 252, 0.65);
+  color: #e9d5ff;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.35);
+}
+
+.cg-lobby-card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.cg-lobby-start-btn {
+  flex: 1;
+  padding: 11px 16px;
+  border-radius: 9px;
+  border: none;
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cg-lobby-start-btn.practice {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+}
+
+.cg-lobby-start-btn.career {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+.cg-lobby-start-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.cg-lobby-reset-btn {
+  padding: 11px 12px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color, #232d3f);
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cg-lobby-reset-btn:hover {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.cg-btn-lobby-back {
+  padding: 6px 12px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color, #232d3f);
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cg-btn-lobby-back:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.5);
+  color: #fff;
+}
+
+.cg-game-mode-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.16);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
+}
+
+.cg-game-mode-badge.career {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+}
+
+.cg-capital-input-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.cg-capital-input-wrap input[readonly] {
+  opacity: 0.78;
+  cursor: not-allowed;
+  padding-right: 26px;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.cg-capital-lock {
+  position: absolute;
+  right: 8px;
+  font-size: 0.75rem;
+  color: #fbbf24;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   [6] 내 트레이딩 성적 카드 (#cgMyStatsCard)
+   ========================================================================== */
+.cg-my-stats-card {
+  background: var(--bg-card, #161b26);
+  border: 1px solid var(--border-color, #232d3f);
+  border-radius: 14px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.cg-stats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cg-stats-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cg-stats-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.cg-stats-games-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.16);
+  border: 1px solid rgba(99, 102, 241, 0.38);
+  color: #c7d2fe;
+}
+
+.cg-btn-edit-nick {
+  font-size: 0.76rem;
+  padding: 5px 11px;
+}
+
+.cg-nick-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.cg-stats-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 780px) {
+  .cg-stats-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.cg-stats-kpi-box {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.cg-stats-kpi-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.cg-stats-kpi-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.cg-stats-kpi-val.pos {
+  color: #34d399;
+}
+
+.cg-stats-kpi-val.neg {
+  color: #f87171;
+}
+
+.cg-stats-kpi-sub {
+  font-size: 0.68rem;
+  color: #64748b;
+}
+
+.cg-donut-wrap {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cg-donut-svg {
+  width: 76px;
+  height: 76px;
+  transform: rotate(-90deg);
+}
+
+.cg-donut-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 7;
+}
+
+.cg-donut-fg {
+  fill: none;
+  stroke: #10b981;
+  stroke-width: 7;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.35s ease;
+}
+
+.cg-donut-text {
+  position: absolute;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.cg-stats-logs-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cg-logs-toggle-btn {
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color, #232d3f);
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.16s ease;
+}
+
+.cg-logs-toggle-btn:hover {
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(99, 102, 241, 0.45);
+  color: #fff;
+}
+
+.cg-logs-chevron {
+  transition: transform 0.2s ease;
+}
+
+.cg-logs-chevron.open {
+  transform: rotate(180deg);
+}
+
+.cg-logs-collapse {
+  animation: cgFadeIn 0.2s ease;
+}
+
+.cg-logs-table-wrap {
+  overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.cg-logs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.cg-logs-table th {
+  text-align: left;
+  padding: 8px 10px;
+  color: #94a3b8;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.72rem;
+}
+
+.cg-logs-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.cg-logs-empty {
+  text-align: center !important;
+  color: #64748b !important;
+  padding: 18px !important;
+  font-family: inherit !important;
+}
+
+/* ==========================================================================
+   [7] 명예의 전당 (#cgHallOfFame) 3단 시상대 & 순위 리스트
+   ========================================================================== */
+.cg-hof-card {
+  background: var(--bg-card, #161b26);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 14px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+}
+
+.cg-hof-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cg-hof-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cg-hof-title {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.cg-hof-filter-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  color: #fde68a;
+}
+
+.cg-hof-podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 14px;
+  padding: 12px 8px 0;
+}
+
+@media (max-width: 640px) {
+  .cg-hof-podium {
+    gap: 8px;
+  }
+}
+
+.cg-podium-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.cg-podium-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.cg-podium-crown {
+  font-size: 1.3rem;
+  color: #fbbf24;
+  filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.6));
+}
+
+.cg-podium-medal {
+  font-size: 0.74rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cg-podium-medal.gold { color: #fde047; }
+.cg-podium-medal.silver { color: #e2e8f0; }
+.cg-podium-medal.bronze { color: #fdba74; }
+
+.cg-podium-nick {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #f8fafc;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cg-podium-nick.waiting {
+  color: #64748b;
+  font-weight: 500;
+  font-size: 0.82rem;
+}
+
+.cg-podium-cap {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #34d399;
+}
+
+.cg-podium-stand {
+  width: 100%;
+  border-radius: 10px 10px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: rgba(15, 23, 42, 0.85);
+}
+
+.cg-podium-stand.gold {
+  height: 98px;
+  background: linear-gradient(180deg, #fde047 0%, #d97706 100%);
+  box-shadow: 0 0 20px rgba(250, 204, 21, 0.25);
+}
+
+.cg-podium-stand.silver {
+  height: 74px;
+  background: linear-gradient(180deg, #e2e8f0 0%, #64748b 100%);
+}
+
+.cg-podium-stand.bronze {
+  height: 54px;
+  background: linear-gradient(180deg, #fdba74 0%, #9a3412 100%);
+}
+
+.cg-hof-table-wrap {
+  overflow-x: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 10px;
+}
+
+.cg-hof-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.cg-hof-table th {
+  text-align: left;
+  padding: 8px 10px;
+  color: #94a3b8;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.72rem;
+}
+
+.cg-hof-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+}
+
+.cg-hof-table tr.cg-hof-my-row {
+  background: rgba(99, 102, 241, 0.18);
+  outline: 1px solid rgba(129, 140, 248, 0.5);
+}
+
+.cg-hof-table tr.cg-hof-my-row td {
+  color: #fff;
+  font-weight: 700;
+}

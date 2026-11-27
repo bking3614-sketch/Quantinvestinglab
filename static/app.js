@@ -158,12 +158,14 @@ document.addEventListener('DOMContentLoaded', () => {
     tabBtnDynamic: document.getElementById('tabBtnDynamic'),
     tabBtnCustomQuant: document.getElementById('tabBtnCustomQuant'),
     tabBtnChartGame: document.getElementById('tabBtnChartGame'),
+    tabBtnChecklist: document.getElementById('tabBtnChecklist'),
     paneSeasonality: document.getElementById('paneSeasonality'),
     panePermanent: document.getElementById('panePermanent'),
     paneAllWeather: document.getElementById('paneAllWeather'),
     paneDynamic: document.getElementById('paneDynamic'),
     paneCustomQuant: document.getElementById('paneCustomQuant'),
     paneChartGame: document.getElementById('paneChartGame'),
+    paneChecklist: document.getElementById('paneChecklist'),
 
     // 🌟 [Tab 4] 동적 자산 배분 DOM 엘리먼트 🌟
     dynLiveSignalHero: document.getElementById('dynLiveSignalHero'),
@@ -1610,6 +1612,7 @@ async function pollStatusUntilReady(maxAttempts = 30) {
       if (el.tabBtnDynamic) el.tabBtnDynamic.classList.toggle('active', tab === 'dynamic');
       if (el.tabBtnCustomQuant) el.tabBtnCustomQuant.classList.toggle('active', tab === 'customquant');
       if (el.tabBtnChartGame) el.tabBtnChartGame.classList.toggle('active', tab === 'chartgame');
+      if (el.tabBtnChecklist) el.tabBtnChecklist.classList.toggle('active', tab === 'checklist');
 
       el.paneSeasonality.style.display = tab === 'seasonality' ? 'block' : 'none';
       el.panePermanent.style.display = tab === 'permanent' ? 'block' : 'none';
@@ -1617,11 +1620,14 @@ async function pollStatusUntilReady(maxAttempts = 30) {
       if (el.paneDynamic) el.paneDynamic.style.display = tab === 'dynamic' ? 'block' : 'none';
       if (el.paneCustomQuant) el.paneCustomQuant.style.display = tab === 'customquant' ? 'block' : 'none';
       if (el.paneChartGame) el.paneChartGame.style.display = tab === 'chartgame' ? 'block' : 'none';
+      if (el.paneChecklist) el.paneChecklist.style.display = tab === 'checklist' ? 'block' : 'none';
 
       if (tab === 'chartgame') {
         if (window.initChartGameIfNeeded) {
           window.initChartGameIfNeeded();
         }
+      } else if (tab === 'checklist') {
+        initChecklistIfNeeded();
       } else if (tab === 'permanent' && !state.perm.latestResult) {
         runPermanentBacktest();
       } else if (tab === 'allweather' && !state.aw.latestResult) {
@@ -1642,6 +1648,7 @@ async function pollStatusUntilReady(maxAttempts = 30) {
     if (el.tabBtnDynamic) el.tabBtnDynamic.addEventListener('click', () => activateTab('dynamic'));
     if (el.tabBtnCustomQuant) el.tabBtnCustomQuant.addEventListener('click', () => activateTab('customquant'));
     if (el.tabBtnChartGame) el.tabBtnChartGame.addEventListener('click', () => activateTab('chartgame'));
+    if (el.tabBtnChecklist) el.tabBtnChecklist.addEventListener('click', () => activateTab('checklist'));
   }
 
   // ════════════════════════════════════════════════════════════
@@ -3322,6 +3329,225 @@ async function pollStatusUntilReady(maxAttempts = 30) {
     }).join('');
   }
 
+
+  // ════════════════════════════════════════════════════════════
+  // 🌟 [Tab 7] 매수/매도 신호등 체크리스트 모듈 🌟
+  // ════════════════════════════════════════════════════════════
+  const checklistState = {
+    initialized: false,
+    loading: false,
+    fgChart: null,
+    vixChart: null
+  };
+
+  function initChecklistIfNeeded() {
+    if (!checklistState.initialized) {
+      checklistState.initialized = true;
+      const tickerSel = document.getElementById('clTickerSelect');
+      const refreshBtn = document.getElementById('clRefreshBtn');
+      if (tickerSel) {
+        tickerSel.addEventListener('change', () => fetchChecklistSignals(tickerSel.value));
+      }
+      if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+          const t = tickerSel ? tickerSel.value : 'SOXL';
+          fetchChecklistSignals(t);
+        });
+      }
+      fetchChecklistSignals(tickerSel ? tickerSel.value : 'SOXL');
+    }
+  }
+
+  async function fetchChecklistSignals(ticker = 'SOXL') {
+    if (checklistState.loading) return;
+    checklistState.loading = true;
+    const refreshBtn = document.getElementById('clRefreshBtn');
+    const updatedEl = document.getElementById('clUpdatedAt');
+    if (refreshBtn) {
+      refreshBtn.disabled = true;
+      refreshBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 조회 중...';
+    }
+    if (updatedEl) updatedEl.textContent = '실시간 시장 지표 및 공포지수 조회 중...';
+
+    try {
+      const resp = await fetch(`/api/checklist_signals?ticker=${encodeURIComponent(ticker)}`);
+      const res = await resp.json();
+      if (!resp.ok || res.status === 'error') {
+        throw new Error(res.message || `서버 오류 (${resp.status})`);
+      }
+      if (updatedEl) updatedEl.textContent = `기준: ${res.target_ticker} · 최근 갱신 ${res.updated_at}`;
+      renderChecklistCharts(res);
+      renderChecklistTables(res);
+    } catch (err) {
+      if (updatedEl) updatedEl.textContent = `조회 실패: ${err.message}`;
+    } finally {
+      checklistState.loading = false;
+      if (refreshBtn) {
+        refreshBtn.disabled = false;
+        refreshBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> 새로고침';
+      }
+    }
+  }
+
+  function renderChecklistCharts(res) {
+    const fg = res.fear_and_greed || {};
+    const vix = res.vix || {};
+
+    const fgScoreEl = document.getElementById('clFgScore');
+    const fgRatingEl = document.getElementById('clFgRating');
+    const fgPrevDay = document.getElementById('clFgPrevDay');
+    const fgPrevWeek = document.getElementById('clFgPrevWeek');
+    const fgPrevMonth = document.getElementById('clFgPrevMonth');
+    const fgPrevYear = document.getElementById('clFgPrevYear');
+
+    if (fgScoreEl) fgScoreEl.textContent = fg.score !== null && fg.score !== undefined ? fg.score : 'N/A';
+    if (fgRatingEl) fgRatingEl.textContent = fg.rating || '-';
+    if (fgPrevDay) fgPrevDay.textContent = fg.previous_close ?? '-';
+    if (fgPrevWeek) fgPrevWeek.textContent = fg.previous_1_week ?? '-';
+    if (fgPrevMonth) fgPrevMonth.textContent = fg.previous_1_month ?? '-';
+    if (fgPrevYear) fgPrevYear.textContent = fg.previous_1_year ?? '-';
+
+    const vixCurrEl = document.getElementById('clVixCurrent');
+    const vixBadgeEl = document.getElementById('clVixBadge');
+    if (vixCurrEl) vixCurrEl.textContent = vix.current !== null && vix.current !== undefined ? vix.current : '-';
+    if (vixBadgeEl && vix.current !== null && vix.current !== undefined) {
+      vixBadgeEl.textContent = vix.current >= 30 ? '공포 구간 (≥30)' : '안정 구간 (<30)';
+    }
+
+    if (typeof Chart === 'undefined') return;
+
+    // 1) CNN Fear & Greed 90일 차트
+    const fgCanvas = document.getElementById('clFgChart');
+    if (fgCanvas) {
+      if (checklistState.fgChart) checklistState.fgChart.destroy();
+      const fgHist = Array.isArray(fg.history_90d) ? fg.history_90d : [];
+      checklistState.fgChart = new Chart(fgCanvas.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: fgHist.map(d => d.date),
+          datasets: [{
+            label: 'Fear & Greed',
+            data: fgHist.map(d => d.score),
+            borderColor: '#f59e0b',
+            backgroundColor: 'rgba(245, 158, 11, 0.14)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.2,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#94a3b8', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+            y: { min: 0, max: 100, ticks: { color: '#94a3b8', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } }
+          }
+        }
+      });
+    }
+
+    // 2) VIX 90일 추이 차트 (30 기준선 포함)
+    const vixCanvas = document.getElementById('clVixChart');
+    if (vixCanvas) {
+      if (checklistState.vixChart) checklistState.vixChart.destroy();
+      const vixHist = Array.isArray(vix.history_90d) ? vix.history_90d : [];
+      checklistState.vixChart = new Chart(vixCanvas.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: vixHist.map(d => d.date),
+          datasets: [
+            {
+              label: 'VIX',
+              data: vixHist.map(d => d.value),
+              borderColor: '#38bdf8',
+              backgroundColor: 'rgba(56, 189, 248, 0.14)',
+              borderWidth: 2,
+              fill: true,
+              tension: 0.2,
+              pointRadius: 0
+            },
+            {
+              label: '기준선 (30)',
+              data: vixHist.map(() => 30),
+              borderColor: 'rgba(239, 68, 68, 0.7)',
+              borderWidth: 1.2,
+              borderDash: [5, 5],
+              fill: false,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#94a3b8', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+            y: { ticks: { color: '#94a3b8', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } }
+          }
+        }
+      });
+    }
+  }
+
+  function formatChecklistBadge(count, total, type) {
+    const action = type === 'buy' ? '확대' : '축소';
+    if (count >= 3) return { text: `${count}/${total} · 1:2:6 비중 ${action}`, cls: 'tier-3' };
+    if (count === 2) return { text: `${count}/${total} · 준비`, cls: 'tier-2' };
+    if (count === 1) return { text: `${count}/${total} · 주목`, cls: 'tier-1' };
+    return { text: `0/${total} · 대기`, cls: 'tier-0' };
+  }
+
+  function renderChecklistRows(tbody, items) {
+    if (!tbody) return;
+    if (!Array.isArray(items) || items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="cl-empty-cell">체크리스트 데이터가 없습니다.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map(item => {
+      const isOn = !!item.met;
+      const cls = isOn ? 'on' : 'off';
+      return `
+        <tr>
+          <td>
+            <span class="cl-light-wrap">
+              <span class="cl-light ${cls}"></span>
+              <span class="cl-light-text ${cls}">${isOn ? 'ON' : 'OFF'}</span>
+            </span>
+          </td>
+          <td style="font-weight: 600;">${item.title}</td>
+          <td style="color: #94a3b8; font-size: 0.75rem;">${item.rule}</td>
+          <td style="font-family: var(--font-mono); font-size: 0.76rem;">${item.current}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function renderChecklistTables(res) {
+    const buyItems = res.buy_checklist || [];
+    const sellItems = res.sell_checklist || [];
+    const buyOn = res.buy_on_count !== undefined ? res.buy_on_count : buyItems.filter(i => i.met).length;
+    const sellOn = res.sell_on_count !== undefined ? res.sell_on_count : sellItems.filter(i => i.met).length;
+
+    const buyBadge = document.getElementById('clBuyBadge');
+    if (buyBadge) {
+      const info = formatChecklistBadge(buyOn, buyItems.length || 6, 'buy');
+      buyBadge.textContent = info.text;
+      buyBadge.className = `cl-signal-badge ${info.cls}`;
+    }
+
+    const sellBadge = document.getElementById('clSellBadge');
+    if (sellBadge) {
+      const info = formatChecklistBadge(sellOn, sellItems.length || 5, 'sell');
+      sellBadge.textContent = info.text;
+      sellBadge.className = `cl-signal-badge ${info.cls}`;
+    }
+
+    renderChecklistRows(document.getElementById('clBuyTableBody'), buyItems);
+    renderChecklistRows(document.getElementById('clSellTableBody'), sellItems);
+  }
 
   // ── 초기화 실행 시퀀스 ──
   async function init() {

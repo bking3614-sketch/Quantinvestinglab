@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ETF 계절성 스위칭 백테스트 터미널 | Quant Alpha Terminal</title>
+  <title>My Quant Investing Labs | Quant Alpha Terminal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -23,7 +23,7 @@
           <i class="fa-solid fa-chart-line-up text-primary"></i>
         </div>
         <div class="brand-text">
-          <h1>종합 자산 배분 퀀트 터미널</h1>
+          <h1>My Quant Investing Labs</h1>
           <span class="sub-badge"><i class="fa-brands fa-yahoo text-warning"></i> Yahoo Finance 실시간 & 1970년대 합성 데이터 연동</span>
         </div>
       </div>
@@ -34,6 +34,7 @@
           <i class="fa-solid fa-chart-line-up"></i>
           <span>ETF 계절성 스위칭 터미널</span>
         </button>
+        <button type="button" class="tab-btn" id="tabBtnChecklist" data-tab="checklist"><i class="fa-solid fa-traffic-light"></i><span>체크리스트</span></button>
         <button type="button" class="tab-btn" id="tabBtnPermanent" data-tab="permanent">
           <i class="fa-solid fa-shield-halved"></i>
           <span>영구 포트폴리오</span>
@@ -1694,6 +1695,93 @@
          5. 사용자 퀀트 (Quantus 스타일) 탭 패널
          ======================================================== -->
     <div class="tab-pane" id="paneCustomQuant" style="display: none;">
+      <!-- AI 자연어 전략 빌더 -->
+      <section class="cq-nl-builder-card" id="cqNlBuilderCard">
+        <div class="cq-nl-header">
+          <div class="cq-nl-title-wrap">
+            <span class="cq-nl-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+            <div>
+              <h3 class="cq-nl-title">AI 자연어 전략 빌더</h3>
+              <p class="cq-nl-subtitle">원하는 투자 조건을 자연어로 입력하면 Step 1~3 필터·팩터를 자동 구성하고 즉시 스크리닝합니다.</p>
+            </div>
+          </div>
+          <div class="cq-nl-header-actions">
+            <span class="cq-nl-mode-badge" id="cqNlModeBadge">로컬 키워드 파서</span>
+            <button type="button" class="cq-nl-api-toggle-btn" id="cqNlApiToggleBtn" title="LLM API 키 설정">
+              <i class="fa-solid fa-key"></i> API 키 설정
+            </button>
+          </div>
+        </div>
+
+        <!-- 인라인 API 키 입력 토글 패널 (cgApiSettings 재사용) -->
+        <div class="cq-nl-api-panel" id="cqNlApiPanel" style="display: none;">
+          <div class="cq-nl-api-grid">
+            <div class="cq-nl-api-field">
+              <label for="cqNlLlmProvider">LLM 제공자</label>
+              <select class="cq-select" id="cqNlLlmProvider">
+                <option value="gemini">Google Gemini (gemini-2.0-flash)</option>
+                <option value="openai">OpenAI (gpt-4o-mini)</option>
+              </select>
+            </div>
+            <div class="cq-nl-api-field cq-nl-api-key-field">
+              <label for="cqNlLlmApiKey">API Key (cgApiSettings 연동)</label>
+              <input type="password" class="cq-input" id="cqNlLlmApiKey" placeholder="API 키 미입력 시 로컬 키워드 파서로 동작합니다">
+            </div>
+            <div class="cq-nl-api-btns">
+              <button type="button" class="cq-nl-api-save-btn" id="cqNlApiSaveBtn">
+                <i class="fa-solid fa-check"></i> 저장
+              </button>
+              <button type="button" class="cq-nl-api-clear-btn" id="cqNlApiClearBtn" title="키 초기화">
+                <i class="fa-solid fa-eraser"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 자연어 입력창 -->
+        <div class="cq-nl-input-row">
+          <div class="cq-nl-input-wrap">
+            <i class="fa-solid fa-terminal cq-nl-input-icon"></i>
+            <input type="text" class="cq-nl-input" id="cqNlInput" placeholder="예: PER 10 이하 ROE 15% 이상 한국 소형주, 12M 모멘텀 + 저PBR 가치주...">
+          </div>
+          <button type="button" class="cq-nl-build-btn" id="cqNlBuildBtn">
+            <i class="fa-solid fa-sparkles"></i> AI 전략 생성 &amp; 스크리닝
+          </button>
+        </div>
+
+        <!-- 예시 칩 4개 -->
+        <div class="cq-nl-chips" id="cqNlChips">
+          <span class="cq-nl-chips-label">예시 전략:</span>
+          <button type="button" class="cq-nl-chip" data-query="PER 10 이하 ROE 15% 이상 한국 소형주">PER 10 이하 ROE 15% 이상 한국 소형주</button>
+          <button type="button" class="cq-nl-chip" data-query="12M 모멘텀 + 저PBR 가치주">12M 모멘텀 + 저PBR 가치주</button>
+          <button type="button" class="cq-nl-chip" data-query="미국 고배당 저부채 우량주">미국 고배당 저부채 우량주</button>
+          <button type="button" class="cq-nl-chip" data-query="F-Score 7점 이상 퀄리티주">F-Score 7점 이상 퀄리티주</button>
+        </div>
+
+        <!-- AI 파싱 결과 요약 배지 -->
+        <div class="cq-nl-summary" id="cqNlSummary" style="display: none;"></div>
+      </section>
+
+      <!-- 내 전략 프리셋 바 -->
+      <section class="cq-preset-bar" id="cqPresetBar">
+        <div class="cq-preset-controls">
+          <div class="cq-preset-title">
+            <i class="fa-solid fa-bookmark text-primary"></i>
+            <span>내 전략 프리셋</span>
+            <span class="cq-preset-sync-badge" id="cqPresetSyncBadge">로컬 저장</span>
+          </div>
+          <div class="cq-preset-save-group">
+            <input type="text" class="cq-input cq-preset-name-input" id="cqPresetNameInput" placeholder="프리셋 이름 (예: 한국 저평가 소형주)" maxlength="40">
+            <button type="button" class="cq-preset-save-btn" id="cqPresetSaveBtn">
+              <i class="fa-solid fa-floppy-disk"></i> 현재 전략 저장
+            </button>
+          </div>
+        </div>
+        <div class="cq-preset-list" id="cqPresetList">
+          <span class="cq-preset-empty">저장된 프리셋이 없습니다. 현재 조건을 이름으로 저장해 원클릭으로 복원하세요.</span>
+        </div>
+      </section>
+
       <div class="custom-quant-layout">
         <!-- 좌측: 3단계 설정 패널 -->
         <aside class="cq-steps-container">
@@ -2101,6 +2189,9 @@
                   <div class="cq-factor-tag" data-cat="QUALITY" data-factor="CURRENT_RATIO" data-direction="DESC" style="display: none;">
                     <span>유동비율</span><span class="order-badge">내림차순 &uarr;</span>
                   </div>
+                  <div class="cq-factor-tag" data-cat="QUALITY" data-factor="F_SCORE" data-direction="DESC" style="display: none;">
+                    <span>F-Score</span><span class="order-badge">내림차순 &uarr;</span>
+                  </div>
 
                   <!-- 가격/모멘텀 -->
                   <div class="cq-factor-tag" data-cat="MOMENTUM" data-factor="MOM_1M" data-direction="DESC" style="display: none;">
@@ -2290,6 +2381,46 @@
             </div>
           </div>
 
+          <!-- 과최적화(부풀림) 검증 리포트 카드 -->
+          <div class="cq-overfit-card" id="cqOverfitCard" style="display: none;">
+            <div class="cq-overfit-header">
+              <div class="cq-chart-title">
+                <i class="fa-solid fa-shield-halved text-primary"></i>
+                <span>과최적화(부풀림) 검증 리포트</span>
+              </div>
+              <span class="cq-overfit-badge" id="cqOverfitRiskBadge">양호</span>
+            </div>
+
+            <p class="cq-overfit-summary" id="cqOverfitSummary"></p>
+
+            <div class="cq-overfit-metrics">
+              <div class="cq-overfit-metric-box">
+                <span class="cq-overfit-metric-label">성과 유지율 (OOS / IS)</span>
+                <strong class="cq-overfit-metric-val" id="cqOverfitRetention">-</strong>
+              </div>
+              <div class="cq-overfit-metric-box">
+                <span class="cq-overfit-metric-label">실제 MDD vs Permutation 95% 신뢰구간 (300회)</span>
+                <strong class="cq-overfit-metric-val" id="cqOverfitPermCI">-</strong>
+              </div>
+            </div>
+
+            <div class="cq-table-scroll">
+              <table class="cq-table cq-overfit-table">
+                <thead>
+                  <tr>
+                    <th>구간 (50:50 분할)</th>
+                    <th>기간</th>
+                    <th>CAGR</th>
+                    <th>MDD</th>
+                    <th>Sharpe</th>
+                    <th>승률</th>
+                  </tr>
+                </thead>
+                <tbody id="cqOverfitTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- 라이브 스크리닝 종목 테이블 -->
           <div class="cq-table-card">
             <div class="cq-table-header">
@@ -2297,7 +2428,13 @@
                 <i class="fa-solid fa-list-ol text-primary"></i>
                 <span>조건 부합 라이브 스크리닝 선정 종목</span>
               </div>
-              <span class="cq-table-count" id="cqScreeningCount">총 0개 종목 편입</span>
+              <div class="cq-table-header-actions">
+                <label class="cq-alloc-toggle" title="투자 원금을 편입 종목 수로 나눈 목표 비중(%)과 배분 금액을 표시합니다">
+                  <input type="checkbox" id="cqToggleAllocation">
+                  <span>매수 금액 계산 보기</span>
+                </label>
+                <span class="cq-table-count" id="cqScreeningCount">총 0개 종목 편입</span>
+              </div>
             </div>
             <div class="cq-table-scroll">
               <table class="cq-table">
@@ -2313,11 +2450,14 @@
                     <th>ROE</th>
                     <th>12M 모멘텀</th>
                     <th>시가총액</th>
+                    <th class="cq-alloc-col" style="display: none;">목표 비중</th>
+                    <th class="cq-alloc-col" style="display: none;">배분 금액</th>
+                    <th>분석</th>
                   </tr>
                 </thead>
                 <tbody id="cqScreeningTableBody">
                   <tr>
-                    <td colspan="10" style="text-align: center; color: var(--text-secondary); padding: 24px;">
+                    <td colspan="11" style="text-align: center; color: var(--text-secondary); padding: 24px;">
                       [현재 조건 종목 스크리닝] 또는 [전략 백테스트 실행] 버튼을 클릭하세요.
                     </td>
                   </tr>
@@ -2327,14 +2467,277 @@
           </div>
         </main>
       </div>
+
+      <!-- 종목별 DART 공시 및 AI 요약 우측 슬라이드 드로어 -->
+      <div class="cq-insight-backdrop" id="cqInsightBackdrop" style="display: none;"></div>
+      <aside class="cq-insight-drawer" id="cqInsightDrawer" aria-hidden="true">
+        <div class="cq-insight-drawer-header">
+          <div>
+            <h3 class="cq-insight-drawer-title" id="cqInsightTitle">종목 분석</h3>
+            <span class="cq-ticker-code" id="cqInsightTicker">-</span>
+          </div>
+          <button type="button" class="cq-insight-close-btn" id="cqInsightCloseBtn" title="닫기">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        <div class="cq-insight-drawer-body">
+          <div class="cq-insight-metrics-strip" id="cqInsightMetricsStrip"></div>
+
+          <section class="cq-insight-section">
+            <div class="cq-insight-section-header">
+              <span><i class="fa-solid fa-robot text-primary"></i> AI 핵심 요약 3줄</span>
+              <span class="cq-nl-mode-badge" id="cqInsightAiBadge">요약</span>
+            </div>
+            <ul class="cq-drawer-ai-list" id="cqInsightAiList"></ul>
+          </section>
+
+          <section class="cq-insight-section">
+            <div class="cq-insight-section-header">
+              <span><i class="fa-solid fa-file-lines text-primary"></i> 최근 3개월 주요 DART 공시</span>
+            </div>
+            <p class="cq-drawer-dart-msg" id="cqInsightDartMsg"></p>
+            <div class="cq-drawer-dart-key-box" id="cqInsightDartKeyBox" style="display: none;">
+              <input type="password" class="cq-input" id="cqInsightDartKeyInput" placeholder="OpenDART API Key 입력 (cg_opendart_api_key)">
+              <button type="button" class="cq-nl-api-save-btn" id="cqInsightDartKeySaveBtn">저장 후 조회</button>
+            </div>
+            <div class="cq-drawer-dart-list" id="cqInsightDartList"></div>
+          </section>
+        </div>
+      </aside>
     </div><!-- /paneCustomQuant -->
 
     <!-- ========================================================
          6. 차트게임 (TradingView Lightweight Charts) 탭 패널
          ======================================================== -->
     <div class="tab-pane" id="paneChartGame" style="display: none;">
+      <!-- 차트 트레이닝 센터 로비 뷰 -->
+      <section class="cg-lobby-view" id="cgLobbyView">
+        <div class="cg-lobby-hero">
+          <span class="cg-lobby-badge"><i class="fa-solid fa-trophy"></i> CHART TRAINING CENTER</span>
+          <h2 class="cg-lobby-title">Trade Like a Pro. Master the Charts.</h2>
+          <p class="cg-lobby-subtitle">블라인드 실전 차트로 매수·매도 타이밍과 자금 관리 감각을 훈련하세요. 연습 모드와 누적 자산 커리어 모드를 선택할 수 있습니다.</p>
+        </div>
+
+        <div class="cg-lobby-cards">
+          <!-- 좌측: 연습 모드 -->
+          <div class="cg-lobby-card">
+            <div class="cg-lobby-card-top">
+              <span class="cg-lobby-mode-tag practice">BASIC TRAINING</span>
+              <i class="fa-solid fa-dumbbell cg-lobby-card-icon"></i>
+            </div>
+            <h3 class="cg-lobby-card-title">연습 모드</h3>
+            <p class="cg-lobby-card-desc">
+              매 게임마다 초기 자본금을 자유롭게 설정해 다양한 종목과 타임프레임에서 매매 감각을 연습합니다.
+            </p>
+            <ul class="cg-lobby-feature-list">
+              <li><i class="fa-solid fa-check"></i> 매 회차 초기 자본금 자유 설정</li>
+              <li><i class="fa-solid fa-check"></i> 일봉·주봉·월봉 및 6대 보조지표 지원</li>
+            </ul>
+            <button type="button" class="cg-lobby-start-btn practice" id="cgBtnStartPractice">
+              <i class="fa-solid fa-play"></i> 게임 시작하기
+            </button>
+          </div>
+
+          <!-- 우측: 커리어 모드 -->
+          <div class="cg-lobby-card career">
+            <div class="cg-lobby-card-top">
+              <span class="cg-lobby-mode-tag career">CAREER PATH</span>
+              <span class="cg-tier-badge tier-bronze" id="cgCareerTierBadge">BRONZE</span>
+            </div>
+            <h3 class="cg-lobby-card-title">커리어 모드</h3>
+            <p class="cg-lobby-card-desc">
+              직전 회차 종료 자본금이 다음 게임으로 그대로 이월됩니다. 누적 자산을 키워 최고 티어 ORACLE에 도전하세요.
+            </p>
+            <div class="cg-career-stats-box">
+              <div class="cg-career-stat">
+                <span>현재 누적 자본금</span>
+                <strong id="cgCareerCapitalVal">10,000,000원</strong>
+              </div>
+              <div class="cg-career-stat">
+                <span>누적 플레이</span>
+                <strong id="cgCareerGamesCount">0회</strong>
+              </div>
+            </div>
+            <div class="cg-lobby-card-actions">
+              <button type="button" class="cg-lobby-start-btn career" id="cgBtnStartCareer">
+                <i class="fa-solid fa-rocket"></i> 게임 시작하기
+              </button>
+              <button type="button" class="cg-lobby-reset-btn" id="cgBtnResetCareer" title="커리어 자본금을 1,000만 원으로 초기화">
+                <i class="fa-solid fa-rotate-left"></i> 초기화
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 내 트레이딩 성적 카드 -->
+        <section class="cg-my-stats-card" id="cgMyStatsCard">
+          <div class="cg-stats-header">
+            <div class="cg-stats-title-group">
+              <i class="fa-solid fa-chart-simple text-primary"></i>
+              <h3 class="cg-stats-title" id="cgStatsNicknameTitle">트레이더의 트레이딩 성적</h3>
+              <span class="cg-stats-games-badge" id="cgStatsGamesBadge">0게임</span>
+            </div>
+            <div class="cg-stats-nick-actions">
+              <button type="button" class="cg-btn-ghost cg-btn-edit-nick" id="cgBtnEditNickname">
+                <i class="fa-solid fa-pen"></i> 닉네임 변경
+              </button>
+            </div>
+          </div>
+
+          <!-- 인라인 닉네임 변경 입력창 -->
+          <div class="cg-nick-edit-row" id="cgNickEditRow" style="display: none;">
+            <input type="text" class="cg-input" id="cgNickEditInput" placeholder="새 닉네임 입력 (최대 20자)" maxlength="20" style="max-width: 240px;">
+            <button type="button" class="cg-btn-primary" id="cgBtnSaveNickname" style="padding: 6px 12px;">저장</button>
+            <button type="button" class="cg-btn-ghost" id="cgBtnCancelNickname" style="padding: 6px 10px;">취소</button>
+          </div>
+
+          <!-- 4대 핵심 지표 그리드 -->
+          <div class="cg-stats-kpi-grid">
+            <div class="cg-stats-kpi-box">
+              <span class="cg-stats-kpi-label">승률</span>
+              <div class="cg-donut-wrap">
+                <svg class="cg-donut-svg" viewBox="0 0 80 80">
+                  <circle class="cg-donut-bg" cx="40" cy="40" r="32"></circle>
+                  <circle class="cg-donut-fg" id="cgWinRateRingCircle" cx="40" cy="40" r="32" stroke-dasharray="201.06" stroke-dashoffset="201.06"></circle>
+                </svg>
+                <span class="cg-donut-text" id="cgWinRateRingText">0%</span>
+              </div>
+            </div>
+            <div class="cg-stats-kpi-box">
+              <span class="cg-stats-kpi-label">평균 수익률</span>
+              <strong class="cg-stats-kpi-val" id="cgStatsAvgReturn">+0.0%</strong>
+              <span class="cg-stats-kpi-sub">전체 게임 평균</span>
+            </div>
+            <div class="cg-stats-kpi-box">
+              <span class="cg-stats-kpi-label">손익비</span>
+              <strong class="cg-stats-kpi-val" id="cgStatsPayoffRatio">0.00</strong>
+              <span class="cg-stats-kpi-sub">|평균수익 / 평균손실|</span>
+            </div>
+            <div class="cg-stats-kpi-box">
+              <span class="cg-stats-kpi-label">TPI</span>
+              <strong class="cg-stats-kpi-val" id="cgStatsTpiScore">0.00</strong>
+              <span class="cg-stats-kpi-sub">(승률/100) × 손익비</span>
+            </div>
+          </div>
+
+          <!-- 하단 접이식 게임 기록 -->
+          <div class="cg-stats-logs-section">
+            <button type="button" class="cg-logs-toggle-btn" id="cgBtnToggleLogs">
+              <i class="fa-regular fa-clock"></i> 내 게임 기록 보기
+              <i class="fa-solid fa-chevron-down cg-logs-chevron" id="cgLogsChevron"></i>
+            </button>
+            <div class="cg-logs-collapse" id="cgGameLogsCollapse" style="display: none;">
+              <div class="cg-logs-table-wrap">
+                <table class="cg-logs-table">
+                  <thead>
+                    <tr>
+                      <th>날짜</th>
+                      <th>종목</th>
+                      <th>수익률</th>
+                      <th>손익금액</th>
+                      <th>종료 자본금</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cgGameLogsTableBody">
+                    <tr><td colspan="5" class="cg-logs-empty">아직 기록된 게임이 없습니다.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 명예의 전당 (#cgHallOfFame) -->
+        <section class="cg-hof-card" id="cgHallOfFame">
+          <div class="cg-hof-header">
+            <div class="cg-hof-title-group">
+              <i class="fa-solid fa-trophy" style="color: #fbbf24; font-size: 1.15rem;"></i>
+              <h3 class="cg-hof-title">명예의 전당</h3>
+              <span class="cg-hof-filter-badge" id="cgHofFilterBadge">커리어 전체 부문</span>
+            </div>
+            <div class="cg-btn-pill-group" id="cgHofPeriodTabs">
+              <button type="button" class="cg-pill-btn active" data-period="all">전체</button>
+              <button type="button" class="cg-pill-btn" data-period="week">주간</button>
+              <button type="button" class="cg-pill-btn" data-period="month">월간</button>
+            </div>
+          </div>
+
+          <!-- 1·2·3위 시상대 (Podium) -->
+          <div class="cg-hof-podium" id="cgHofPodium">
+            <!-- 좌측 2위 -->
+            <div class="cg-podium-slot rank-2" id="cgHofPodium2">
+              <div class="cg-podium-info">
+                <span class="cg-podium-medal silver"><i class="fa-solid fa-medal"></i> 2위</span>
+                <strong class="cg-podium-nick">도전자 대기 중</strong>
+                <span class="cg-podium-cap">-</span>
+              </div>
+              <div class="cg-podium-stand silver">2</div>
+            </div>
+
+            <!-- 중앙 1위 -->
+            <div class="cg-podium-slot rank-1" id="cgHofPodium1">
+              <div class="cg-podium-info">
+                <i class="fa-solid fa-crown cg-podium-crown"></i>
+                <span class="cg-podium-medal gold"><i class="fa-solid fa-medal"></i> 1위</span>
+                <strong class="cg-podium-nick">도전자 대기 중</strong>
+                <span class="cg-podium-cap">-</span>
+              </div>
+              <div class="cg-podium-stand gold">1</div>
+            </div>
+
+            <!-- 우측 3위 -->
+            <div class="cg-podium-slot rank-3" id="cgHofPodium3">
+              <div class="cg-podium-info">
+                <span class="cg-podium-medal bronze"><i class="fa-solid fa-medal"></i> 3위</span>
+                <strong class="cg-podium-nick">도전자 대기 중</strong>
+                <span class="cg-podium-cap">-</span>
+              </div>
+              <div class="cg-podium-stand bronze">3</div>
+            </div>
+          </div>
+
+          <!-- 4위 ~ 20위 순위 리스트 -->
+          <div class="cg-hof-table-wrap" id="cgHofListWrap">
+            <table class="cg-hof-table">
+              <thead>
+                <tr>
+                  <th style="width: 64px;">순위</th>
+                  <th style="width: 110px;">티어</th>
+                  <th>닉네임</th>
+                  <th>플레이 수</th>
+                  <th style="text-align: right;">누적 자본금</th>
+                </tr>
+              </thead>
+              <tbody id="cgHofTableBody">
+                <tr><td colspan="5" class="cg-logs-empty">4위 이하 순위 데이터가 없습니다.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <!-- 실제 차트게임 플레이 뷰 -->
+      <div id="cgGamePlayView" style="display: none;">
       <!-- 상단 게임 설정 컨트롤 바 -->
       <div class="cg-top-bar">
+        <div class="cg-control-group">
+          <button type="button" class="cg-btn-lobby-back" id="cgBtnBackToLobby">
+            <i class="fa-solid fa-arrow-left"></i> 로비로 돌아가기
+          </button>
+          <span class="cg-game-mode-badge" id="cgGameModeBadge">연습 모드</span>
+        </div>
+
+        <div class="cg-control-group">
+          <label class="cg-label" for="cgInitCapitalInput"><i class="fa-solid fa-coins"></i> 초기자본</label>
+          <div class="cg-capital-input-wrap">
+            <input type="number" id="cgInitCapitalInput" class="cg-input" value="10000000" min="100000" step="1000000" style="width: 130px;">
+            <i class="fa-solid fa-lock cg-capital-lock" id="cgCapitalLockIcon" style="display: none;" title="커리어 모드 2회차부터는 직전 회차 자본금이 자동 이월됩니다"></i>
+          </div>
+          <button type="button" class="cg-btn-ghost" id="cgBtnResetCapitalInGame" style="display: none;" title="파산/초기화 시 1,000만 원으로 리셋">
+            <i class="fa-solid fa-rotate-left"></i> 1,000만 초기화
+          </button>
+        </div>
+
         <div class="cg-control-group">
           <label class="cg-label" for="cgTickerInput"><i class="fa-solid fa-magnifying-glass"></i> 종목</label>
           <input type="text" id="cgTickerInput" list="cgTickerDatalist" class="cg-input" placeholder="티커 입력 (예: 005930, AAPL, NVDA)" style="width: 250px;" autocomplete="off">
@@ -2718,7 +3121,130 @@
           </div>
         </div>
       </div>
+      </div><!-- /cgGamePlayView -->
     </div><!-- /paneChartGame -->
+
+    <!-- ════════════════════════════════════════════════════════════
+         [Tab 7] 매수/매도 신호등 체크리스트
+         ════════════════════════════════════════════════════════════ -->
+    <div class="tab-pane" id="paneChecklist" style="display: none;">
+      <div class="cl-toolbar">
+        <div class="cl-toolbar-title">
+          <i class="fa-solid fa-traffic-light text-primary"></i>
+          <div>
+            <h2>레버리지·지수 매수/매도 신호등 체크리스트</h2>
+            <span class="cl-updated-text" id="clUpdatedAt">데이터 불러오는 중...</span>
+          </div>
+        </div>
+        <div class="cl-toolbar-controls">
+          <label class="cl-ticker-label" for="clTickerSelect">기준 종목:</label>
+          <select id="clTickerSelect" class="cl-select">
+            <option value="SOXL" selected>SOXL (반도체 3X)</option>
+            <option value="TQQQ">TQQQ (나스닥 3X)</option>
+            <option value="QQQ">QQQ (나스닥 1X)</option>
+            <option value="SOXX">SOXX (반도체 1X)</option>
+          </select>
+          <button type="button" class="cl-refresh-btn" id="clRefreshBtn">
+            <i class="fa-solid fa-arrows-rotate"></i> 새로고침
+          </button>
+        </div>
+      </div>
+
+      <!-- 상단 2열 차트: CNN Fear & Greed + VIX 90일 추이 -->
+      <div class="cl-charts-grid">
+        <div class="cl-card">
+          <div class="cl-card-header">
+            <div class="cl-card-title">
+              <i class="fa-solid fa-gauge-high text-warning"></i>
+              <span>CNN Fear &amp; Greed Index (90일 추이)</span>
+            </div>
+            <div class="cl-fg-score-wrap">
+              <span class="cl-fg-score" id="clFgScore">-</span>
+              <span class="cl-fg-rating" id="clFgRating">-</span>
+            </div>
+          </div>
+          <div class="cl-fg-history-pills">
+            <div class="cl-fg-pill"><span>1일전</span><strong id="clFgPrevDay">-</strong></div>
+            <div class="cl-fg-pill"><span>1주전</span><strong id="clFgPrevWeek">-</strong></div>
+            <div class="cl-fg-pill"><span>1개월전</span><strong id="clFgPrevMonth">-</strong></div>
+            <div class="cl-fg-pill"><span>1년전</span><strong id="clFgPrevYear">-</strong></div>
+          </div>
+          <div class="cl-chart-box">
+            <canvas id="clFgChart"></canvas>
+          </div>
+        </div>
+
+        <div class="cl-card">
+          <div class="cl-card-header">
+            <div class="cl-card-title">
+              <i class="fa-solid fa-wave-square text-primary"></i>
+              <span>CBOE VIX 공포지수 (90일 추이)</span>
+            </div>
+            <div class="cl-fg-score-wrap">
+              <span class="cl-fg-score" id="clVixCurrent">-</span>
+              <span class="cl-fg-rating" id="clVixBadge">기준선 30</span>
+            </div>
+          </div>
+          <div class="cl-vix-sub">VIX ≥ 30 돌파 후 1개월(28일) 경과 시 매수 신호 점등</div>
+          <div class="cl-chart-box">
+            <canvas id="clVixChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- 하단 2열 체크리스트: 매수 6개 / 매도 5개 -->
+      <div class="cl-lists-grid">
+        <div class="cl-card">
+          <div class="cl-card-header">
+            <div class="cl-card-title">
+              <i class="fa-solid fa-circle-arrow-down" style="color: #34d399;"></i>
+              <span>매수 체크리스트 (6개 기준)</span>
+            </div>
+            <span class="cl-signal-badge tier-0" id="clBuyBadge">0/6 대기</span>
+          </div>
+          <div class="cl-table-wrap">
+            <table class="cl-table">
+              <thead>
+                <tr>
+                  <th style="width: 72px;">신호등</th>
+                  <th>조건 항목</th>
+                  <th>기준</th>
+                  <th>현재 수치</th>
+                </tr>
+              </thead>
+              <tbody id="clBuyTableBody">
+                <tr><td colspan="4" class="cl-empty-cell">데이터를 불러오는 중...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="cl-card">
+          <div class="cl-card-header">
+            <div class="cl-card-title">
+              <i class="fa-solid fa-circle-arrow-up" style="color: #f87171;"></i>
+              <span>매도 체크리스트 (5개 기준)</span>
+            </div>
+            <span class="cl-signal-badge tier-0" id="clSellBadge">0/5 대기</span>
+          </div>
+          <div class="cl-table-wrap">
+            <table class="cl-table">
+              <thead>
+                <tr>
+                  <th style="width: 72px;">신호등</th>
+                  <th>조건 항목</th>
+                  <th>기준</th>
+                  <th>현재 수치</th>
+                </tr>
+              </thead>
+              <tbody id="clSellTableBody">
+                <tr><td colspan="4" class="cl-empty-cell">데이터를 불러오는 중...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div><!-- /paneChecklist -->
   </div>
 
   <!-- HTS/MTS 스타일 지표 설정 모달 -->
@@ -2929,9 +3455,33 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="auth.js"></script>
   <script src="app.js"></script>
   <script src="custom_quant.js"></script>
   <script src="chart_game.js"></script>
+
+  <!-- Google 로그인 모달 (Supabase Auth) -->
+  <div id="sbLoginModal" class="cg-modal-overlay" style="display: none;">
+    <div class="cg-modal-dialog" style="max-width: 420px;">
+      <div class="cg-modal-header">
+        <h3 style="margin: 0; font-size: 1.05rem; color: #f8fafc;">
+          <i class="fa-brands fa-google" style="color: #60a5fa;"></i> 커리어 모드 Google 로그인
+        </h3>
+        <button type="button" class="cg-btn-ghost" id="sbBtnCloseLoginModal" style="padding: 4px 8px;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="cg-modal-body" style="display: flex; flex-direction: column; gap: 12px; padding: 14px 0;">
+        <p id="sbLoginStatusMsg" style="margin: 0; font-size: 0.82rem; color: #94a3b8; line-height: 1.45;">
+          Google 계정으로 로그인하면 커리어 모드 자산이 클라우드에 저장됩니다.
+        </p>
+        <button type="button" id="sbGoogleLoginBtn" class="cg-lobby-start-btn practice" style="width: 100%; justify-content: center;">
+          <i class="fa-brands fa-google"></i> Google 계정으로 계속하기
+        </button>
+      </div>
+    </div>
+  </div>
   <!-- 커스텀 컬러 피커 팝오버 (전역 공용) -->
   <div id="cgColorPickerOverlay"></div>
   <div id="cgCustomColorPicker" role="dialog" aria-label="색상 선택">

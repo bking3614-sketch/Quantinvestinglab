@@ -2277,7 +2277,7 @@ def execute_screener(
     alias_map = {
         "per": "per", "pbr": "pbr", "psr": "psr", "por": "por", "pcr": "pcr",
         "pfcr": "pfcr", "prr": "prr", "pgpr": "pgpr", "peg": "peg", "ncav": "ncav_ratio",
-        "shareholder_yield": "shareholder_yield", "dividend_yield": "dividend_yield",
+        "shareholder_yield": "shareholder_yield", "dividend_yield": "dividend_yield", "div_yield": "dividend_yield",
         "ev_ebitda": "ev_ebitda", "ev_ebit": "ev_ebit", "ev_sales": "ev_sales", "ev_fcf": "ev_fcf",
         "roe": "roe", "roa": "roa", "roic": "roic", "gpa": "gpa", "f_score": "f_score",
         "altman_z": "altman_z", "operating_margin": "operating_margin", "op_margin": "operating_margin",
@@ -2560,7 +2560,7 @@ def execute_backtest(
     alias_map = {
         "per": "per", "pbr": "pbr", "psr": "psr", "por": "por", "pcr": "pcr",
         "pfcr": "pfcr", "prr": "prr", "pgpr": "pgpr", "peg": "peg", "ncav": "ncav_ratio",
-        "shareholder_yield": "shareholder_yield", "dividend_yield": "dividend_yield",
+        "shareholder_yield": "shareholder_yield", "dividend_yield": "dividend_yield", "div_yield": "dividend_yield",
         "ev_ebitda": "ev_ebitda", "ev_ebit": "ev_ebit", "ev_sales": "ev_sales", "ev_fcf": "ev_fcf",
         "roe": "roe", "roa": "roa", "roic": "roic", "gpa": "gpa", "f_score": "f_score",
         "altman_z": "altman_z", "operating_margin": "operating_margin", "op_margin": "operating_margin",
@@ -2787,6 +2787,9 @@ def execute_backtest(
 
     mar = round(cagr / mdd, 2) if mdd > 0.01 else 0.0
 
+    # 부풀림(과최적화) 검증: In-Sample(전반기) vs Out-of-Sample(후반기) & 300회 Permutation 시뮬레이션
+    overfitting_analysis = _compute_overfitting_analysis(portfolio_values, dates, n_permutations=300)
+
     # 연도별 수익률
     annual_df = pd.DataFrame({"portfolio": portfolio_values, "benchmark": benchmark_norm})
     annual_res = annual_df.resample("YE").last()
@@ -2872,7 +2875,163 @@ def execute_backtest(
         "applied_factor_weights": latest_factor_weights or applied_weights_history,
         "factor_weights_history": applied_weights_history,
         "latest_factor_weights": latest_factor_weights,
-        "optimization_diagnostics": latest_opt_diagnostics
+        "optimization_diagnostics": latest_opt_diagnostics,
+        "overfitting_analysis": overfitting_analysis
+    }
+
+
+def _calc_segment_stats(seg_vals: pd.Series, seg_dates: pd.DatetimeIndex) -> Dict[str, Any]:
+    """수익률 곡선 특정 구간의 CAGR, MDD, Sharpe, 승률 산출"""
+    if seg_vals is None or len(seg_vals) < 2:
+        return {
+            "start_date": "",
+            "end_date": "",
+            "cagr": 0.0,
+            "mdd": 0.0,
+            "sharpe": 0.0,
+            "win_rate": 0.0
+        }
+
+    seg_rets = seg_vals.pct_change().dropna()
+    total_ret = (seg_vals.iloc[-1] / seg_vals.iloc[0]) - 1.0 if seg_vals.iloc[0] > 0 else 0.0
+    days = max(1, (seg_dates[-1] - seg_dates[0]).days)
+    years = days / 365.25
+    cagr = ((seg_vals.iloc[-1] / seg_vals.iloc[0]) ** (1.0 / years) - 1.0) * 100.0 if (years > 0.1 and seg_vals.iloc[0] > 0) else total_ret * 100.0
+
+    cummax = seg_vals.cummax()
+    drawdowns = (seg_vals - cummax) / cummax
+    mdd = abs(float(drawdowns.min())) * 100.0 if not drawdowns.empty else 0.0
+
+    vol = float(seg_rets.std() * np.sqrt(252)) if len(seg_rets) > 1 else 0.0
+    sharpe = float((seg_rets.mean() * 252 - 0.03) / vol) if vol > 1e-6 else 0.0
+    win_rate = float((seg_rets > 0).mean() * 100.0) if len(seg_rets) > 0 else 0.0
+
+    return {
+        "start_date": seg_dates[0].strftime("%Y-%m-%d"),
+        "end_date": seg_dates[-1].strftime("%Y-%m-%d"),
+        "cagr": round(float(cagr), 2),
+        "mdd": round(float(mdd), 2),
+        "sharpe": round(float(sharpe), 2),
+        "win_rate": round(float(win_rate), 2)
+    }
+
+
+def _compute_overfitting_analysis(
+    portfolio_values: pd.Series,
+    dates: pd.DatetimeIndex,
+    n_permutations: int = 300
+) -> Dict[str, Any]:
+    """
+    과최적화(부풀림) 검증:
+    1) 전반기(In-Sample 50%) vs 후반기(Out-of-Sample 50%) 성과 비교 및 성과 유지율
+    2) 일간 수익률 무작위 300회 Permutation 시뮬레이션 기반 MDD 95% 신뢰구간 및 위험 등급 산출
+    """
+    n = len(portfolio_values)
+    mid = max(2, n // 2)
+    if n < 4:
+        empty_seg = _calc_segment_stats(portfolio_values, dates)
+        return {
+            "in_sample": empty_seg,
+            "out_of_sample": empty_seg,
+            "retention_rate": 0.0,
+            "cagr_retention": 0.0,
+            "sharpe_retention": 0.0,
+            "permutation": {
+                "iterations": n_permutations,
+                "actual_mdd": empty_seg["mdd"],
+                "mdd_ci_low": empty_seg["mdd"],
+                "mdd_ci_high": empty_seg["mdd"],
+                "mdd_median": empty_seg["mdd"]
+            },
+            "risk_grade": "주의",
+            "risk_level": "MEDIUM",
+            "risk_comment": "데이터 기간이 짧아 과최적화 검증 신뢰도가 제한적입니다."
+        }
+
+    is_stats = _calc_segment_stats(portfolio_values.iloc[:mid], dates[:mid])
+    oos_stats = _calc_segment_stats(portfolio_values.iloc[mid:], dates[mid:])
+
+    # 성과 유지율 계산 (전반기 대비 후반기 유지 비율 %)
+    if is_stats["cagr"] > 0.5:
+        cagr_ret = max(0.0, min(200.0, (oos_stats["cagr"] / is_stats["cagr"]) * 100.0))
+    else:
+        cagr_ret = 100.0 if oos_stats["cagr"] >= is_stats["cagr"] else 0.0
+
+    if is_stats["sharpe"] > 0.05:
+        sharpe_ret = max(0.0, min(200.0, (oos_stats["sharpe"] / is_stats["sharpe"]) * 100.0))
+    else:
+        sharpe_ret = 100.0 if oos_stats["sharpe"] >= is_stats["sharpe"] else 0.0
+
+    retention_rate = round((cagr_ret + sharpe_ret) / 2.0, 1)
+
+    # 일간 수익률 300회 무작위 셔플 Permutation 시뮬레이션
+    daily_rets = portfolio_values.pct_change().dropna().to_numpy(dtype=float)
+    full_cummax = portfolio_values.cummax()
+    actual_mdd = abs(float(((portfolio_values - full_cummax) / full_cummax).min())) * 100.0
+
+    if len(daily_rets) >= 5:
+        rng = np.random.default_rng(42)
+        perm_mdds = np.empty(n_permutations, dtype=float)
+        for i in range(n_permutations):
+            shuffled = rng.permutation(daily_rets)
+            curve = np.empty(len(shuffled) + 1, dtype=float)
+            curve[0] = 1.0
+            curve[1:] = np.cumprod(1.0 + shuffled)
+            peaks = np.maximum.accumulate(curve)
+            dds = (curve - peaks) / peaks
+            perm_mdds[i] = abs(float(np.min(dds))) * 100.0
+
+        mdd_ci_low = round(float(np.percentile(perm_mdds, 2.5)), 2)
+        mdd_ci_high = round(float(np.percentile(perm_mdds, 97.5)), 2)
+        mdd_median = round(float(np.percentile(perm_mdds, 50.0)), 2)
+    else:
+        mdd_ci_low = round(actual_mdd, 2)
+        mdd_ci_high = round(actual_mdd, 2)
+        mdd_median = round(actual_mdd, 2)
+
+    # 과최적화 위험 등급 산출 (양호 / 주의 / 위험)
+    risk_score = 0
+    if oos_stats["cagr"] < 0 or oos_stats["sharpe"] < 0:
+        risk_score += 2
+    elif retention_rate < 50.0:
+        risk_score += 2
+    elif retention_rate < 75.0:
+        risk_score += 1
+
+    if actual_mdd > mdd_ci_high and mdd_ci_high > 0:
+        risk_score += 1
+    if (is_stats["sharpe"] - oos_stats["sharpe"]) > 0.8:
+        risk_score += 1
+
+    if risk_score <= 0:
+        risk_grade = "양호"
+        risk_level = "LOW"
+        risk_comment = "전반기(In-Sample) 성과가 후반기(Out-of-Sample)에서도 안정적으로 유지되며, Permutation MDD 95% 신뢰구간 내에 있습니다."
+    elif risk_score == 1:
+        risk_grade = "주의"
+        risk_level = "MEDIUM"
+        risk_comment = "후반기(Out-of-Sample) 성과가 일부 둔화되었거나 수익률 경로 의존성이 감지되었습니다. 실전 투입 전 조건 점검을 권장합니다."
+    else:
+        risk_grade = "위험"
+        risk_level = "HIGH"
+        risk_comment = "후반기(Out-of-Sample) 성과 급락 또는 과최적화(부풀림) 위험이 높습니다. 팩터 수·필터 조건을 단순화해 보세요."
+
+    return {
+        "in_sample": is_stats,
+        "out_of_sample": oos_stats,
+        "retention_rate": retention_rate,
+        "cagr_retention": round(cagr_ret, 1),
+        "sharpe_retention": round(sharpe_ret, 1),
+        "permutation": {
+            "iterations": n_permutations,
+            "actual_mdd": round(actual_mdd, 2),
+            "mdd_ci_low": mdd_ci_low,
+            "mdd_ci_high": mdd_ci_high,
+            "mdd_median": mdd_median
+        },
+        "risk_grade": risk_grade,
+        "risk_level": risk_level,
+        "risk_comment": risk_comment
     }
 
 
@@ -2955,7 +3114,18 @@ def _fallback_simulation(
         "latest_portfolio": latest_picks,
         "applied_factor_weights": {},
         "latest_factor_weights": {},
-        "optimization_diagnostics": {"is_fallback": True, "fallback_reason": "시뮬레이션 대체 모드", "mean_rank_ic": {}, "factor_correlations": {}}
+        "optimization_diagnostics": {"is_fallback": True, "fallback_reason": "시뮬레이션 대체 모드", "mean_rank_ic": {}, "factor_correlations": {}},
+        "overfitting_analysis": {
+            "in_sample": {"start_date": start_date, "end_date": end_date, "cagr": 15.2, "mdd": 11.5, "sharpe": 1.35, "win_rate": 56.5},
+            "out_of_sample": {"start_date": start_date, "end_date": end_date, "cagr": 15.2, "mdd": 11.5, "sharpe": 1.35, "win_rate": 56.5},
+            "retention_rate": 100.0,
+            "cagr_retention": 100.0,
+            "sharpe_retention": 100.0,
+            "permutation": {"iterations": 300, "actual_mdd": 11.5, "mdd_ci_low": 8.4, "mdd_ci_high": 16.8, "mdd_median": 12.1},
+            "risk_grade": "주의",
+            "risk_level": "MEDIUM",
+            "risk_comment": "시뮬레이션 대체 모드 데이터입니다. 실제 시세 기반 백테스트 시 정밀 검증이 수행됩니다."
+        }
     }
 
 
@@ -3136,4 +3306,670 @@ def api_metadata():
             {"id": "inst_net_buy_20d", "name": "기관 20일 순매수", "category": "Flow", "default_dir": "desc"},
             {"id": "retail_net_buy_20d", "name": "개인 20일 순매수", "category": "Flow", "default_dir": "desc"}
         ]
+    })
+
+
+# ==============================================================================
+# 8. AI 자연어 전략 빌더 (NL -> Custom Quant Strategy JSON)
+# ==============================================================================
+
+_NL_ALLOWED_FACTORS = {
+    "PER": "ASC", "PBR": "ASC", "PSR": "ASC", "PCR": "ASC", "DIV_YIELD": "DESC",
+    "EV_EBITDA": "ASC", "EV_EBIT": "ASC", "EV_SALES": "ASC", "EV_FCF": "ASC",
+    "ROE": "DESC", "ROA": "DESC", "OP_MARGIN": "DESC", "DEBT_RATIO": "ASC",
+    "CURRENT_RATIO": "DESC", "F_SCORE": "DESC",
+    "MOM_1M": "DESC", "MOM_3M": "DESC", "MOM_6M": "DESC", "MOM_12M": "DESC", "HIGH_52W": "DESC",
+    "REV_GROWTH": "DESC", "OP_GROWTH": "DESC", "NET_GROWTH": "DESC"
+}
+
+_NL_ALLOWED_FILTER_METRICS = {
+    "PER", "PBR", "PCR", "PSR", "ROE", "ROA", "OP_MARGIN",
+    "EV_EBITDA", "DEBT_RATIO", "MOM_12M", "DIV_YIELD", "F_SCORE"
+}
+
+
+def _parse_nl_strategy_keywords(query: str) -> Dict[str, Any]:
+    """API 키 미설정 또는 LLM 오류 시 사용하는 키워드 기반 로컬 전략 파서"""
+    q = (query or "").strip()
+    ql = q.lower()
+
+    # 1. 국가 및 시장
+    country = "KR"
+    market = "ALL"
+    if any(k in ql for k in ["미국", "usa", "us ", "나스닥", "s&p", "sp500", "뉴욕"]):
+        country = "US"
+        if any(k in ql for k in ["s&p", "sp500"]):
+            market = "S&P500"
+    elif any(k in ql for k in ["일본", "japan", "닛케이", "nikkei"]):
+        country = "JP"
+        if "nikkei" in ql or "닛케이" in ql:
+            market = "NIKKEI225"
+    elif any(k in ql for k in ["홍콩", "hong kong", "항셍", "hangseng"]):
+        country = "HK"
+        if "항셍" in ql or "hang" in ql:
+            market = "HANGSENG"
+    else:
+        country = "KR"
+        if "코스피" in ql or "kospi" in ql:
+            market = "KOSPI"
+        elif "코스닥" in ql or "kosdaq" in ql:
+            market = "KOSDAQ"
+
+    # 2. 일반 필터
+    small_cap = any(k in ql for k in ["소형주", "스몰캡", "small cap", "smallcap", "하위 20%"])
+    include_finance = any(k in ql for k in ["금융주 포함", "은행주", "금융 포함"])
+    general_filters = {
+        "exclude_financials": not include_finance,
+        "exclude_holding": True,
+        "exclude_administrative": True,
+        "exclude_loss": True,
+        "exclude_loss_annual": False,
+        "exclude_china": True,
+        "small_cap_bottom_20": small_cap
+    }
+
+    # 3. 수치 조건 파싱 (예: "PER 10 이하", "ROE 15% 이상", "F-Score 7점 이상", "부채비율 100 이하")
+    custom_filters: List[Dict[str, Any]] = []
+    metric_patterns = [
+        ("PER", r"(?:per|주가수익비율)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:배)?\s*(이하|미만|이상|초과|<=|>=|<|>)?"),
+        ("PBR", r"(?:pbr|주가순자산비율)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:배)?\s*(이하|미만|이상|초과|<=|>=|<|>)?"),
+        ("PSR", r"(?:psr)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:배)?\s*(이하|미만|이상|초과|<=|>=|<|>)?"),
+        ("PCR", r"(?:pcr)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:배)?\s*(이하|미만|이상|초과|<=|>=|<|>)?"),
+        ("ROE", r"(?:roe|자기자본이익률)\s*([0-9]+(?:\.[0-9]+)?)\s*%?\s*(이하|미만|이상|초과|<=|>=|<|>)?"),
+        ("ROA", r"(?:roa|총자산이익률)\s*([0-9]+(?:\.[0-9]+)?)\s*%?\s*(이하|미만|이상|초과|<=|>=|<|>)?"),
+        ("OP_MARGIN", r"(?:영업이익률|op_margin)\s*([0-9]+(?:\.[0-9]+)?)\s*%?\s*(이하|미만|이상|초과|<=|>=|<|>)?"),
+        ("EV_EBITDA", r"(?:ev\s*/?\s*ebitda)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:배)?\s*(이하|미만|이상|초과|<=|>=|<|>)?"),
+        ("DEBT_RATIO", r"(?:부채비율|debt_ratio)\s*([0-9]+(?:\.[0-9]+)?)\s*%?\s*(이하|미만|이상|초과|<=|>=|<|>)?"),
+        ("DIV_YIELD", r"(?:배당수익률|배당률|배당)\s*([0-9]+(?:\.[0-9]+)?)\s*%?\s*(이하|미만|이상|초과|<=|>=|<|>)?"),
+        ("MOM_12M", r"(?:12m\s*모멘텀|12개월\s*모멘텀)\s*(-?[0-9]+(?:\.[0-9]+)?)\s*%?\s*(이하|미만|이상|초과|<=|>=|<|>)?"),
+        ("F_SCORE", r"(?:f[\s\-_]?score|피오트로스키)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:점)?\s*(이하|미만|이상|초과|<=|>=|<|>)?")
+    ]
+    default_op_for_metric = {
+        "PER": "LTE", "PBR": "LTE", "PSR": "LTE", "PCR": "LTE", "EV_EBITDA": "LTE", "DEBT_RATIO": "LTE",
+        "ROE": "GTE", "ROA": "GTE", "OP_MARGIN": "GTE", "DIV_YIELD": "GTE", "MOM_12M": "GTE", "F_SCORE": "GTE"
+    }
+    op_word_map = {
+        "이하": "LTE", "<=": "LTE",
+        "미만": "LT", "<": "LT",
+        "이상": "GTE", ">=": "GTE",
+        "초과": "GT", ">": "GT"
+    }
+
+    seen_filter_metrics = set()
+    for metric_key, pat in metric_patterns:
+        m = re.search(pat, ql)
+        if m:
+            val = float(m.group(1))
+            op_raw = (m.group(2) or "").strip()
+            op = op_word_map.get(op_raw, default_op_for_metric.get(metric_key, "LTE"))
+            custom_filters.append({"metric": metric_key, "operator": op, "value": val})
+            seen_filter_metrics.add(metric_key)
+
+    # 정성적 키워드 기반 보조 필터
+    if ("저부채" in ql or "부채 낮" in ql) and "DEBT_RATIO" not in seen_filter_metrics:
+        custom_filters.append({"metric": "DEBT_RATIO", "operator": "LTE", "value": 100})
+        seen_filter_metrics.add("DEBT_RATIO")
+    if ("고배당" in ql or "배당주" in ql) and "DIV_YIELD" not in seen_filter_metrics:
+        custom_filters.append({"metric": "DIV_YIELD", "operator": "GTE", "value": 3.0})
+        seen_filter_metrics.add("DIV_YIELD")
+    if ("저pbr" in ql or "저 pbr" in ql) and "PBR" not in seen_filter_metrics:
+        custom_filters.append({"metric": "PBR", "operator": "LTE", "value": 1.2})
+        seen_filter_metrics.add("PBR")
+    if ("저per" in ql or "저 per" in ql) and "PER" not in seen_filter_metrics:
+        custom_filters.append({"metric": "PER", "operator": "LTE", "value": 12})
+        seen_filter_metrics.add("PER")
+
+    # 4. 팩터 선택
+    factors: List[Dict[str, str]] = []
+    added_factors = set()
+
+    def _add_factor(f_key: str, direction: Optional[str] = None):
+        if f_key in _NL_ALLOWED_FACTORS and f_key not in added_factors:
+            factors.append({
+                "metric": f_key,
+                "direction": direction or _NL_ALLOWED_FACTORS[f_key]
+            })
+            added_factors.add(f_key)
+
+    # 명시적 팩터 매칭
+    factor_kw_map = [
+        ("PER", ["per", "주가수익"]),
+        ("PBR", ["pbr", "주가순자산"]),
+        ("PSR", ["psr"]),
+        ("PCR", ["pcr"]),
+        ("EV_EBITDA", ["ev/ebitda", "ev_ebitda", "evebitda"]),
+        ("DIV_YIELD", ["배당", "고배당", "dividend"]),
+        ("ROE", ["roe", "자기자본이익률"]),
+        ("ROA", ["roa"]),
+        ("OP_MARGIN", ["영업이익률"]),
+        ("DEBT_RATIO", ["부채비율", "저부채"]),
+        ("CURRENT_RATIO", ["유동비율"]),
+        ("F_SCORE", ["f-score", "fscore", "f_score", "피오트로스키"]),
+        ("MOM_12M", ["12m", "12개월", "모멘텀"]),
+        ("MOM_6M", ["6m", "6개월"]),
+        ("MOM_3M", ["3m", "3개월"]),
+        ("MOM_1M", ["1m", "1개월"]),
+        ("HIGH_52W", ["52주", "신고가"]),
+        ("REV_GROWTH", ["매출", "성장주"]),
+        ("OP_GROWTH", ["영업이익증가", "이익성장"]),
+        ("NET_GROWTH", ["순이익증가"])
+    ]
+    for f_key, kws in factor_kw_map:
+        if any(kw in ql for kw in kws):
+            _add_factor(f_key)
+
+    # 테마 키워드 보강
+    if any(k in ql for k in ["가치주", "저평가", "마법공식", "밸류"]):
+        _add_factor("PER")
+        _add_factor("PBR")
+    if any(k in ql for k in ["우량주", "퀄리티", "수익성"]):
+        _add_factor("ROE")
+        _add_factor("OP_MARGIN")
+    if "F_SCORE" in seen_filter_metrics:
+        _add_factor("F_SCORE")
+        _add_factor("ROE")
+    if not factors:
+        _add_factor("PER")
+        _add_factor("ROE")
+
+    # 요약문 생성
+    country_names = {"KR": "한국", "US": "미국", "JP": "일본", "HK": "홍콩"}
+    parts = [country_names.get(country, country)]
+    if market != "ALL":
+        parts.append(market)
+    if small_cap:
+        parts.append("소형주(하위20%)")
+    if custom_filters:
+        op_sym = {"LTE": "≤", "GTE": "≥", "LT": "<", "GT": ">"}
+        f_txt = ", ".join(f"{c['metric']} {op_sym.get(c['operator'], c['operator'])} {c['value']}" for c in custom_filters)
+        parts.append(f"필터: {f_txt}")
+    factor_txt = ", ".join(f"{f['metric']}({'↑' if f['direction'] == 'ASC' else '↓'})" for f in factors)
+    parts.append(f"팩터: {factor_txt}")
+
+    return {
+        "mode": "local_fallback",
+        "summary": " · ".join(parts),
+        "strategy": {
+            "country": country,
+            "market": market,
+            "industry": "ALL",
+            "general_filters": general_filters,
+            "custom_filters": custom_filters,
+            "factors": factors,
+            "weight_mode": "EQUAL",
+            "top_n": 20
+        }
+    }
+
+
+def _normalize_llm_strategy(parsed: Dict[str, Any], original_query: str) -> Dict[str, Any]:
+    """LLM이 반환한 전략 JSON을 UI 컨트롤 스키마에 맞게 정규화/검증"""
+    fallback = _parse_nl_strategy_keywords(original_query)["strategy"]
+    raw_strat = parsed.get("strategy") if isinstance(parsed.get("strategy"), dict) else parsed
+
+    country = normalize_country(raw_strat.get("country") or fallback["country"])
+    market = str(raw_strat.get("market") or "ALL").upper().strip()
+    valid_markets = {
+        "KR": {"ALL", "KOSPI", "KOSDAQ"},
+        "US": {"ALL", "S&P500"},
+        "JP": {"ALL", "NIKKEI225"},
+        "HK": {"ALL", "HANGSENG"}
+    }
+    if market not in valid_markets.get(country, {"ALL"}):
+        market = "ALL"
+
+    gf_raw = raw_strat.get("general_filters") or {}
+    general_filters = {
+        "exclude_financials": bool(gf_raw.get("exclude_financials", True)),
+        "exclude_holding": bool(gf_raw.get("exclude_holding", True)),
+        "exclude_administrative": bool(gf_raw.get("exclude_administrative", True)),
+        "exclude_loss": bool(gf_raw.get("exclude_loss", True)),
+        "exclude_loss_annual": bool(gf_raw.get("exclude_loss_annual", False)),
+        "exclude_china": bool(gf_raw.get("exclude_china", True)),
+        "small_cap_bottom_20": bool(gf_raw.get("small_cap_bottom_20", fallback["general_filters"]["small_cap_bottom_20"]))
+    }
+
+    custom_filters = []
+    op_norm = {"<=": "LTE", "LTE": "LTE", ">=": "GTE", "GTE": "GTE", "<": "LT", "LT": "LT", ">": "GT", "GT": "GT"}
+    for cf in (raw_strat.get("custom_filters") or []):
+        if not isinstance(cf, dict):
+            continue
+        m = str(cf.get("metric") or "").upper().strip()
+        if m == "DIVIDEND_YIELD":
+            m = "DIV_YIELD"
+        if m == "MOMENTUM_12M":
+            m = "MOM_12M"
+        if m == "OPERATING_MARGIN":
+            m = "OP_MARGIN"
+        val = _safe_float(cf.get("value"))
+        if m in _NL_ALLOWED_FILTER_METRICS and val is not None:
+            op = op_norm.get(str(cf.get("operator") or "LTE").upper().strip(), "LTE")
+            custom_filters.append({"metric": m, "operator": op, "value": val})
+
+    factors = []
+    seen_f = set()
+    for f in (raw_strat.get("factors") or []):
+        if isinstance(f, dict):
+            fk = str(f.get("metric") or "").upper().strip()
+            fd = str(f.get("direction") or "").upper().strip()
+        elif isinstance(f, str):
+            fk = f.upper().strip()
+            fd = ""
+        else:
+            continue
+        if fk == "DIVIDEND_YIELD":
+            fk = "DIV_YIELD"
+        if fk == "MOMENTUM_12M":
+            fk = "MOM_12M"
+        if fk == "OPERATING_MARGIN":
+            fk = "OP_MARGIN"
+        if fk in _NL_ALLOWED_FACTORS and fk not in seen_f:
+            factors.append({
+                "metric": fk,
+                "direction": fd if fd in ("ASC", "DESC") else _NL_ALLOWED_FACTORS[fk]
+            })
+            seen_f.add(fk)
+
+    if not factors:
+        factors = fallback["factors"]
+
+    weight_mode = str(raw_strat.get("weight_mode") or "EQUAL").upper().strip()
+    if weight_mode not in ("EQUAL", "DYNAMIC", "OPTIMIZE"):
+        weight_mode = "EQUAL"
+
+    top_n = int(_safe_float(raw_strat.get("top_n"), 20) or 20)
+    top_n = max(5, min(100, top_n))
+
+    summary = str(parsed.get("summary") or "").strip()
+    if not summary:
+        summary = _parse_nl_strategy_keywords(original_query)["summary"]
+
+    return {
+        "mode": "llm",
+        "summary": summary,
+        "strategy": {
+            "country": country,
+            "market": market,
+            "industry": str(raw_strat.get("industry") or "ALL").upper().strip() or "ALL",
+            "general_filters": general_filters,
+            "custom_filters": custom_filters,
+            "factors": factors,
+            "weight_mode": weight_mode,
+            "top_n": top_n
+        }
+    }
+
+
+def _parse_nl_strategy_llm(query: str, provider: str, api_key: str) -> Optional[Dict[str, Any]]:
+    """Gemini 또는 OpenAI REST API로 자연어 퀀트 전략을 구조화 JSON으로 변환"""
+    if not api_key or not api_key.strip():
+        return None
+
+    prompt = f"""당신은 퀀트 투자 전략 설계 어시스턴트입니다.
+사용자의 자연어 전략 요청을 아래 JSON 스키마로 정확히 변환하십시오. 마크다운 코드블록 없이 순수 JSON만 반환하십시오.
+
+[허용 값]
+- country: "KR" | "US" | "JP" | "HK"
+- market: KR이면 "ALL" | "KOSPI" | "KOSDAQ", US이면 "ALL" | "S&P500", JP이면 "ALL" | "NIKKEI225", HK이면 "ALL" | "HANGSENG"
+- industry: "ALL" (특별한 업종 지정 없으면 "ALL")
+- custom_filters[].metric: "PER", "PBR", "PCR", "PSR", "ROE", "ROA", "OP_MARGIN", "EV_EBITDA", "DEBT_RATIO", "MOM_12M", "DIV_YIELD", "F_SCORE"
+- custom_filters[].operator: "LTE" (이하), "GTE" (이상), "LT" (미만), "GT" (초과)
+- factors[].metric: "PER", "PBR", "PSR", "PCR", "DIV_YIELD", "EV_EBITDA", "EV_EBIT", "EV_SALES", "EV_FCF", "ROE", "ROA", "OP_MARGIN", "DEBT_RATIO", "CURRENT_RATIO", "F_SCORE", "MOM_1M", "MOM_3M", "MOM_6M", "MOM_12M", "HIGH_52W", "REV_GROWTH", "OP_GROWTH", "NET_GROWTH"
+- factors[].direction: "ASC" (낮을수록 우수: PER/PBR/부채비율 등) | "DESC" (높을수록 우수: ROE/모멘텀/배당수익률/F_SCORE 등)
+- weight_mode: "EQUAL" | "DYNAMIC" | "OPTIMIZE"
+- top_n: 5~100 정수 (기본 20)
+
+[출력 JSON 형식]
+{{
+  "summary": "한줄 전략 요약 (예: 한국 소형주 · PER≤10, ROE≥15% · PER/ROE 팩터)",
+  "strategy": {{
+    "country": "KR",
+    "market": "ALL",
+    "industry": "ALL",
+    "general_filters": {{
+      "exclude_financials": true,
+      "exclude_holding": true,
+      "exclude_administrative": true,
+      "exclude_loss": true,
+      "exclude_loss_annual": false,
+      "exclude_china": true,
+      "small_cap_bottom_20": false
+    }},
+    "custom_filters": [],
+    "factors": [],
+    "weight_mode": "EQUAL",
+    "top_n": 20
+  }}
+}}
+
+[사용자 요청]
+{query}"""
+
+    try:
+        clean_provider = (provider or "gemini").lower().strip()
+        if "gemini" in clean_provider:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key.strip()}"
+            resp = requests.post(
+                url,
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}
+                },
+                timeout=12
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            text_out = data["candidates"][0]["content"]["parts"][0]["text"]
+        else:
+            url = "https://api.openai.com/v1/chat/completions"
+            resp = requests.post(
+                url,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key.strip()}"
+                },
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"}
+                },
+                timeout=12
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            text_out = data["choices"][0]["message"]["content"]
+
+        match = re.search(r"\{[\s\S]*\}", text_out)
+        if match:
+            parsed = json.loads(match.group(0))
+            return _normalize_llm_strategy(parsed, query)
+    except Exception as e:
+        logger.warning(f"LLM nl_to_strategy failed, falling back to keyword parser: {e}")
+    return None
+
+
+@custom_quant_bp.route("/nl_to_strategy", methods=["POST", "OPTIONS"])
+def api_nl_to_strategy():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+    data = request.get_json(force=True, silent=True) or {}
+    query = str(data.get("query") or "").strip()
+    if not query:
+        return jsonify({"status": "error", "message": "자연어 전략 설명을 입력해 주세요."}), 400
+
+    llm_provider = str(data.get("llm_provider") or "gemini").strip()
+    llm_api_key = str(data.get("llm_api_key") or "").strip()
+
+    result = None
+    if llm_api_key:
+        result = _parse_nl_strategy_llm(query, llm_provider, llm_api_key)
+
+    if result is None:
+        result = _parse_nl_strategy_keywords(query)
+
+    return jsonify({
+        "status": "success",
+        "mode": result["mode"],
+        "summary": result["summary"],
+        "strategy": result["strategy"]
+    })
+
+
+# ==============================================================================
+# 9. 종목별 DART 공시 및 AI 핵심 요약 인사이트 (/stock_insight)
+# ==============================================================================
+
+_CQ_DART_CORP_CACHE: Optional[Dict[str, str]] = None
+
+
+def _cq_get_dart_corp_code(stock_code: str, dart_api_key: str) -> Optional[str]:
+    """6자리 종목코드 -> 8자리 OpenDART 고유번호(corp_code) 매핑"""
+    global _CQ_DART_CORP_CACHE
+    clean_code = re.sub(r"\D", "", str(stock_code or "")).zfill(6)
+    if len(clean_code) != 6:
+        return None
+
+    if _CQ_DART_CORP_CACHE and clean_code in _CQ_DART_CORP_CACHE:
+        return _CQ_DART_CORP_CACHE[clean_code]
+
+    cache_paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "dart_corp_code_map.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_cache", "dart_corp_code_map.json")
+    ]
+    for cp in cache_paths:
+        if os.path.exists(cp):
+            try:
+                with open(cp, "r", encoding="utf-8") as f:
+                    _CQ_DART_CORP_CACHE = json.load(f)
+                    if clean_code in _CQ_DART_CORP_CACHE:
+                        return _CQ_DART_CORP_CACHE[clean_code]
+            except Exception:
+                pass
+
+    if not dart_api_key:
+        return None
+
+    try:
+        import io
+        import zipfile
+        import xml.etree.ElementTree as ET
+
+        url = f"https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key={dart_api_key.strip()}"
+        resp = requests.get(url, headers={"User-Agent": "QuantInvestingLab"}, timeout=12)
+        resp.raise_for_status()
+
+        mapping: Dict[str, str] = {}
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            xml_filename = [n for n in zf.namelist() if n.lower().endswith(".xml")][0]
+            with zf.open(xml_filename) as xf:
+                tree = ET.parse(xf)
+                for item in tree.findall(".//list"):
+                    sc = (item.findtext("stock_code") or "").strip()
+                    cc = (item.findtext("corp_code") or "").strip()
+                    if sc and cc and len(sc) == 6:
+                        mapping[sc] = cc
+
+        _CQ_DART_CORP_CACHE = mapping
+        try:
+            os.makedirs(os.path.dirname(cache_paths[0]), exist_ok=True)
+            with open(cache_paths[0], "w", encoding="utf-8") as f:
+                json.dump(mapping, f)
+        except Exception:
+            pass
+
+        return mapping.get(clean_code)
+    except Exception as e:
+        logger.warning(f"OpenDART corpCode fetch failed: {e}")
+        return None
+
+
+def _fetch_recent_dart_disclosures(ticker: str, country: str, dart_api_key: str) -> Tuple[List[Dict[str, Any]], str, str]:
+    """최근 3개월 주요 OpenDART 공시 목록 조회"""
+    norm_c = normalize_country(country)
+    if norm_c != "KR":
+        return [], "non_kr", "해외 종목은 한국 OpenDART 공시 대상이 아닙니다."
+
+    if not dart_api_key or not dart_api_key.strip():
+        return [], "no_key", "OpenDART API 키가 설정되지 않았습니다. 아래 입력란에 키를 입력하면 최근 3개월 공시를 조회할 수 있습니다."
+
+    base_code = str(ticker or "").split(".")[0].strip()
+    corp_code = _cq_get_dart_corp_code(base_code, dart_api_key)
+    if not corp_code:
+        return [], "no_corp", f"종목코드({base_code})에 해당하는 DART 고유번호를 찾지 못했습니다."
+
+    end_dt = datetime.now()
+    bgn_dt = end_dt - timedelta(days=90)
+
+    try:
+        resp = requests.get(
+            "https://opendart.fss.or.kr/api/list.json",
+            params={
+                "crtfc_key": dart_api_key.strip(),
+                "corp_code": corp_code,
+                "bgn_de": bgn_dt.strftime("%Y%m%d"),
+                "end_de": end_dt.strftime("%Y%m%d"),
+                "page_no": 1,
+                "page_count": 15
+            },
+            timeout=10
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        status_code = str(payload.get("status", ""))
+        if status_code == "013":
+            return [], "ok", "최근 3개월간 등록된 공시가 없습니다."
+        if status_code != "000":
+            return [], "error", payload.get("message") or f"OpenDART 응답 오류 ({status_code})"
+
+        items = []
+        for row in (payload.get("list") or [])[:12]:
+            rcept_no = str(row.get("rcept_no") or "").strip()
+            raw_dt = str(row.get("rcept_dt") or "").strip()
+            fmt_dt = f"{raw_dt[:4]}-{raw_dt[4:6]}-{raw_dt[6:8]}" if len(raw_dt) == 8 else raw_dt
+            items.append({
+                "title": row.get("report_nm") or "공시",
+                "date": fmt_dt,
+                "submitter": row.get("flr_nm") or "",
+                "remark": row.get("rm") or "",
+                "rcept_no": rcept_no,
+                "url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}" if rcept_no else ""
+            })
+        return items, "ok", f"최근 3개월 공시 {len(items)}건"
+    except Exception as e:
+        logger.warning(f"OpenDART list.json failed for {ticker}: {e}")
+        return [], "error", f"DART 공시 조회 중 오류: {e}"
+
+
+def _build_local_stock_summary(name: str, ticker: str, metrics: Dict[str, Any], disclosures: List[Dict[str, Any]]) -> List[str]:
+    """LLM API 키 미설정 시 퀀트 지표 + 공시 기반 3줄 요약 생성"""
+    per = _safe_float(metrics.get("per"))
+    pbr = _safe_float(metrics.get("pbr"))
+    roe = _safe_float(metrics.get("roe"))
+    mom12 = _safe_float(metrics.get("momentum_12m"))
+    f_score = _safe_float(metrics.get("f_score"))
+
+    val_parts = []
+    if per is not None:
+        val_parts.append(f"PER {per:.1f}배")
+    if pbr is not None:
+        val_parts.append(f"PBR {pbr:.2f}배")
+    line1 = f"밸류에이션: {', '.join(val_parts)} 수준으로 스크리닝 조건에 부합했습니다." if val_parts else f"{name}({ticker})은 현재 팩터 스크리닝 상위권에 선정되었습니다."
+
+    qual_parts = []
+    if roe is not None:
+        qual_parts.append(f"ROE {roe:+.1f}%")
+    if f_score is not None:
+        qual_parts.append(f"F-Score {int(f_score)}점")
+    if mom12 is not None:
+        qual_parts.append(f"12M 모멘텀 {mom12:+.1f}%")
+    line2 = f"수익성·추세: {', '.join(qual_parts)}를 기록 중입니다." if qual_parts else "수익성 및 모멘텀 팩터 복합 점수가 양호합니다."
+
+    if disclosures:
+        latest_titles = ", ".join(d["title"] for d in disclosures[:2])
+        line3 = f"최근 3개월 공시({len(disclosures)}건): '{latest_titles}' 등이 확인됩니다."
+    else:
+        line3 = "최근 공시 내역이 없거나 DART 키 미설정 상태이므로, 재무·업황 추가 확인을 권장합니다."
+
+    return [line1, line2, line3]
+
+
+def _generate_llm_stock_summary(
+    name: str,
+    ticker: str,
+    metrics: Dict[str, Any],
+    disclosures: List[Dict[str, Any]],
+    provider: str,
+    api_key: str
+) -> Optional[List[str]]:
+    """Gemini 또는 OpenAI API로 종목 핵심 요약 3줄 생성"""
+    if not api_key or not api_key.strip():
+        return None
+
+    disc_text = "\n".join(f"- [{d['date']}] {d['title']}" for d in disclosures[:8]) or "최근 3개월 DART 공시 없음"
+    prompt = f"""당신은 퀀트 주식 애널리스트입니다.
+아래 종목의 퀀트 지표와 최근 3개월 공시를 바탕으로 투자자가 빠르게 파악할 수 있는 핵심 요약 3줄을 작성하십시오.
+반드시 순수 JSON 형식으로만 응답하십시오: {{"summary": ["요약1", "요약2", "요약3"]}}
+
+[종목] {name} ({ticker})
+[퀀트 지표] {json.dumps(metrics, ensure_ascii=False)}
+[최근 3개월 공시]
+{disc_text}"""
+
+    try:
+        clean_provider = (provider or "gemini").lower().strip()
+        if "gemini" in clean_provider:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key.strip()}"
+            resp = requests.post(
+                url,
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"}
+                },
+                timeout=12
+            )
+            resp.raise_for_status()
+            text_out = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        else:
+            resp = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key.strip()}"},
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.2,
+                    "response_format": {"type": "json_object"}
+                },
+                timeout=12
+            )
+            resp.raise_for_status()
+            text_out = resp.json()["choices"][0]["message"]["content"]
+
+        match = re.search(r"\{[\s\S]*\}", text_out)
+        if match:
+            parsed = json.loads(match.group(0))
+            lines = parsed.get("summary")
+            if isinstance(lines, list) and len(lines) >= 1:
+                return [str(x).strip() for x in lines[:3] if str(x).strip()]
+    except Exception as e:
+        logger.warning(f"LLM stock_insight failed: {e}")
+    return None
+
+
+@custom_quant_bp.route("/stock_insight", methods=["POST", "OPTIONS"])
+def api_stock_insight():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+    data = request.get_json(force=True, silent=True) or {}
+    ticker = str(data.get("ticker") or "").strip()
+    name = str(data.get("name") or ticker).strip()
+    country = str(data.get("country") or "KR").strip()
+    metrics = data.get("metrics") if isinstance(data.get("metrics"), dict) else {}
+    dart_api_key = str(data.get("dart_api_key") or "").strip()
+    llm_provider = str(data.get("llm_provider") or "gemini").strip()
+    llm_api_key = str(data.get("llm_api_key") or "").strip()
+
+    if not ticker:
+        return jsonify({"status": "error", "message": "종목 티커가 필요합니다."}), 400
+
+    disclosures, dart_status, dart_message = _fetch_recent_dart_disclosures(ticker, country, dart_api_key)
+
+    ai_lines = _generate_llm_stock_summary(name, ticker, metrics, disclosures, llm_provider, llm_api_key)
+    if ai_lines:
+        ai_mode = "llm"
+    else:
+        ai_lines = _build_local_stock_summary(name, ticker, metrics, disclosures)
+        ai_mode = "local_fallback"
+
+    return jsonify({
+        "status": "success",
+        "ticker": ticker,
+        "name": name,
+        "dart_status": dart_status,
+        "dart_message": dart_message,
+        "disclosures": disclosures,
+        "ai_mode": ai_mode,
+        "ai_summary": ai_lines
     })
