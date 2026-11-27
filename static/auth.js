@@ -87,7 +87,7 @@
       statusEl.textContent = `Supabase 연결 오류: ${lastInitError}`;
       statusEl.style.color = '#fca5a5';
     } else {
-      statusEl.textContent = 'Google 계정으로 로그인하면 커리어 모드 자산이 클라우드에 저장됩니다.';
+      statusEl.textContent = '커리어 모드 기록과 랭킹을 저장하려면 로그인하세요';
       statusEl.style.color = '#94a3b8';
     }
   }

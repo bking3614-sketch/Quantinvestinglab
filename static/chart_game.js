@@ -947,12 +947,15 @@
     if (val === undefined || val === null || isNaN(val)) return '0';
     const num = Number(val);
     if (state.currency === 'USD') {
-      return Math.abs(num) < 5 ? `$${num.toFixed(4)}` : `$${num.toFixed(2)}`;
+      if (Math.abs(num) < 5) {
+        return `$${num.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+      }
+      return `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
     if (Math.abs(num) < 5) {
       return `${num.toFixed(4)}원`;
     }
-    return `${Math.round(num).toLocaleString()}원`;
+    return `${Math.round(num).toLocaleString('ko-KR')}원`;
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -2269,7 +2272,7 @@
     if (dom.lobbyView) dom.lobbyView.style.display = 'none';
     if (dom.gamePlayView) dom.gamePlayView.style.display = 'block';
     syncCapitalControlForMode();
-    startNewGame();
+    startNewGame().then(() => handleResize());
   }
 
   function returnToLobby() {

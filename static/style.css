@@ -2418,3 +2418,191 @@ input[type="range"]::-webkit-slider-thumb:hover {
   color: #f87171;
 }
 
+/* ════════════════════════════════════════════════════════════
+   Google 로그인 중앙 모달 (Supabase Auth)
+   ════════════════════════════════════════════════════════════ */
+.sb-login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 19, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 16px;
+}
+
+.sb-login-card {
+  position: relative;
+  max-width: 380px;
+  width: 90%;
+  padding: 32px 28px;
+  border-radius: 16px;
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: center;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.sb-login-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  transition: all 0.15s ease;
+}
+
+.sb-login-close:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+}
+
+.sb-login-brand-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(56, 189, 248, 0.2));
+  border: 1px solid rgba(129, 140, 248, 0.4);
+  color: #818cf8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  margin-bottom: 4px;
+}
+
+.sb-login-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+}
+
+.sb-login-subtitle {
+  margin: 0 0 8px;
+  font-size: 0.84rem;
+  color: #94a3b8;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+
+.sb-google-btn {
+  width: 100%;
+  padding: 12px 18px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.sb-google-btn:hover {
+  background: #f8fafc;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(255, 255, 255, 0.14);
+}
+
+/* ════════════════════════════════════════════════════════════
+   모바일(<=768px) 상단 헤더 1줄 압축 (PC >768px 레이아웃 무변경)
+   ════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .top-nav {
+    height: auto !important;
+    padding: 8px 12px !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+  }
+
+  .top-nav .brand {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    gap: 8px !important;
+    order: 1;
+  }
+
+  .top-nav .brand-logo {
+    width: 30px !important;
+    height: 30px !important;
+    font-size: 0.95rem !important;
+    flex-shrink: 0;
+  }
+
+  .top-nav .brand-text h1 {
+    font-size: 14.5px !important;
+    line-height: 1.2 !important;
+    margin: 0 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .top-nav .sub-badge {
+    display: none !important;
+  }
+
+  .top-nav .nav-controls {
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    flex-shrink: 0 !important;
+    order: 2;
+  }
+
+  .top-nav .status-badge {
+    padding: 3px 8px !important;
+    font-size: 10px !important;
+    line-height: 1.15 !important;
+    text-align: center !important;
+    gap: 5px !important;
+    max-width: 108px !important;
+    white-space: normal !important;
+    border-radius: 10px !important;
+  }
+
+  .top-nav .status-dot {
+    width: 6px !important;
+    height: 6px !important;
+    flex-shrink: 0;
+  }
+
+  .top-nav .btn-refresh {
+    width: 30px !important;
+    height: 30px !important;
+    flex-shrink: 0;
+  }
+
+  .top-nav .main-tab-nav {
+    order: 3;
+    width: 100% !important;
+  }
+}
+

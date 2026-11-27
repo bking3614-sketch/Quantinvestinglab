@@ -2929,3 +2929,91 @@
   color: #fff;
   font-weight: 700;
 }
+
+/* ==========================================================================
+   [8] 모바일 스마트폰(<=768px) 차트게임 UI/UX 정밀 최적화 (PC >768px 무변경)
+   ========================================================================== */
+@media (max-width: 768px) {
+  /* 하단 고정 매매 도크에 가려 내 계좌 자산 현황 카드가 잘리지 않도록 여백 확보 */
+  #paneChartGame,
+  #cgGamePlayView {
+    padding-bottom: 190px !important;
+  }
+
+  /* 상단 버튼(일봉/주봉/월봉/지표 설정) & 지표 토글 툴바 상하 여백 확보 (글자 잘림 방지) */
+  #paneChartGame .cg-top-bar {
+    padding: 10px 12px !important;
+    gap: 8px !important;
+  }
+
+  #paneChartGame .cg-control-group {
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+    row-gap: 6px !important;
+  }
+
+  #paneChartGame .cg-pill-btn,
+  #paneChartGame .cg-btn-ghost,
+  #paneChartGame .cg-btn-primary {
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
+    line-height: 1.25 !important;
+  }
+
+  #paneChartGame .cg-quick-toolbar {
+    padding: 6px 8px !important;
+    min-height: 40px !important;
+    align-items: center !important;
+  }
+
+  #paneChartGame .cg-quick-toolbar .cg-tool-btn {
+    height: 30px !important;
+    line-height: 1.2 !important;
+    padding: 4px 10px !important;
+  }
+
+  /* RSI & 거래량(Volume) 하단 빈 여백 제거: 85px~95px로 타이트하게 맞춤 */
+  #paneChartGame .cg-sub-pane,
+  #paneChartGame #cgRsiPane,
+  #paneChartGame #cgVolumePane,
+  #paneChartGame #cgRsiChartWrap,
+  #paneChartGame #cgVolChartWrap {
+    height: 88px !important;
+    min-height: 88px !important;
+    max-height: 88px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+  }
+
+  #paneChartGame #cgRsiChart,
+  #paneChartGame #cgVolumeChart,
+  #paneChartGame .cg-sub-chart {
+    height: 88px !important;
+    min-height: 88px !important;
+    max-height: 88px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* 하단 고정 매매 도크 내 불필요한 키보드 단축키 안내 숨김 */
+  #paneChartGame .cg-shortcuts-hint {
+    display: none !important;
+  }
+
+  /* 768px 이하 태블릿 세로/모바일에서도 하단 고정 독 일관 적용 */
+  #paneChartGame .cg-trading-panel > .cg-card:nth-child(3) {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 1050 !important;
+    margin: 0 !important;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+    border-radius: 14px 14px 0 0 !important;
+    background: rgba(15, 23, 42, 0.96) !important;
+    backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(99, 102, 241, 0.45) !important;
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.55) !important;
+  }
+}
