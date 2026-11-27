@@ -11,16 +11,23 @@
 
   const PROVIDER_MODELS = {
     gemini: [
-      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' }
+      { value: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen (최신 기본 추천)' },
+      { value: 'gemini-4-neon', label: 'Gemini 4 Neon (고성능 에이전트)' },
+      { value: 'gemini-4-carbon', label: 'Gemini 4 Carbon (최상위 심층 추론)' },
+      { value: 'gemini-4-argon', label: 'Gemini 4 Argon (고속 추론)' },
+      { value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (빠른 응답)' },
+      { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite (초경량/무료 한도 여유)' },
+      { value: 'custom', label: '직접 모델 ID 입력...' }
     ],
     openai: [
       { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
-      { value: 'gpt-4o', label: 'GPT-4o' }
+      { value: 'gpt-4o', label: 'GPT-4o' },
+      { value: 'custom', label: '직접 모델 ID 입력...' }
     ],
     anthropic: [
       { value: 'claude-3-5-sonnet-latest', label: 'Claude 3.5 Sonnet' },
-      { value: 'claude-3-5-haiku-latest', label: 'Claude 3.5 Haiku' }
+      { value: 'claude-3-5-haiku-latest', label: 'Claude 3.5 Haiku' },
+      { value: 'custom', label: '직접 모델 ID 입력...' }
     ]
   };
 
@@ -49,7 +56,7 @@
     } catch (e) {}
     return {
       provider: 'gemini',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-4-hydrogen',
       apiKey: ''
     };
   }
@@ -149,6 +156,35 @@
     return `<div class="ai-md-body">${html}</div>`;
   }
 
+  function getOrCreateCustomModelInput() {
+    let customInp = document.getElementById('aiCustomModelInput');
+    if (!customInp) {
+      const modelSel = document.getElementById('aiModelSelect');
+      if (modelSel && modelSel.parentNode) {
+        customInp = document.createElement('input');
+        customInp.type = 'text';
+        customInp.id = 'aiCustomModelInput';
+        customInp.className = 'ai-settings-input';
+        customInp.placeholder = '예: gemini-4-hydrogen 또는 신규 모델 ID 입력';
+        customInp.style.marginTop = '8px';
+        customInp.style.display = 'none';
+        modelSel.parentNode.appendChild(customInp);
+      }
+    }
+    return customInp;
+  }
+
+  function toggleCustomModelInput() {
+    const modelSel = document.getElementById('aiModelSelect');
+    const customInp = getOrCreateCustomModelInput();
+    if (!modelSel || !customInp) return;
+    const isCustom = modelSel.value === 'custom';
+    customInp.style.display = isCustom ? 'block' : 'none';
+    if (isCustom && !customInp.value) {
+      customInp.focus();
+    }
+  }
+
   // ── 전역 설정 모달 제어 ──
   function syncModalFields(providerOverride = null) {
     const s = loadSettings();
@@ -164,14 +200,25 @@
     });
 
     const modelSel = document.getElementById('aiModelSelect');
+    const customInp = getOrCreateCustomModelInput();
     if (modelSel) {
       const options = PROVIDER_MODELS[prov] || PROVIDER_MODELS.gemini;
       modelSel.innerHTML = options.map(m => `<option value="${m.value}">${m.label}</option>`).join('');
-      if (!providerOverride && options.some(m => m.value === s.model)) {
-        modelSel.value = s.model;
+      const presetValues = options.filter(m => m.value !== 'custom').map(m => m.value);
+
+      if (!providerOverride && s.model) {
+        if (presetValues.includes(s.model)) {
+          modelSel.value = s.model;
+          if (customInp) customInp.value = '';
+        } else {
+          modelSel.value = 'custom';
+          if (customInp) customInp.value = s.model;
+        }
       } else {
         modelSel.value = options[0].value;
+        if (customInp) customInp.value = '';
       }
+      toggleCustomModelInput();
     }
 
     const keyInp = document.getElementById('aiApiKeyInput');
@@ -224,12 +271,21 @@
       });
     }
 
+    const modelSel = document.getElementById('aiModelSelect');
+    if (modelSel) {
+      modelSel.addEventListener('change', toggleCustomModelInput);
+    }
+
     if (saveBtn) {
       saveBtn.addEventListener('click', () => {
         const checkedRadio = modal.querySelector('input[name="aiProviderRadio"]:checked');
         const provider = checkedRadio ? checkedRadio.value : 'gemini';
-        const modelSel = document.getElementById('aiModelSelect');
-        const model = modelSel ? modelSel.value : PROVIDER_MODELS[provider][0].value;
+        const customInp = getOrCreateCustomModelInput();
+        let model = modelSel ? modelSel.value : PROVIDER_MODELS[provider][0].value;
+        if (model === 'custom') {
+          const customVal = customInp ? customInp.value.trim() : '';
+          model = customVal || PROVIDER_MODELS[provider][0].value;
+        }
         const apiKey = keyInp ? keyInp.value.trim() : '';
         saveSettings({ provider, model, apiKey });
         closeSettingsModal();

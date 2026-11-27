@@ -4286,7 +4286,7 @@ def api_sec_filing_summary():
     )
 
     try:
-        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-4-hydrogen:generateContent?key={api_key}"
         resp = requests.post(
             gemini_url,
             json={

@@ -2940,7 +2940,7 @@ def api_ai_analyst_chat():
 
         else:
             # 기본값: Gemini
-            target_model = model or "gemini-2.5-flash"
+            target_model = model or "gemini-4-hydrogen"
             gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
             gemini_contents = [
                 {
