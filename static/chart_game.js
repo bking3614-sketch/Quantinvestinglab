@@ -2284,16 +2284,19 @@
     }
     if (dom.btnStartCareer) {
       dom.btnStartCareer.addEventListener('click', () => {
-        if (!window.sbUser) {
-          state.pendingCareerEnter = true;
-          if (window.sbAuth && typeof window.sbAuth.openLoginModal === 'function') {
-            window.sbAuth.openLoginModal();
-          } else {
-            alert('커리어 모드는 Google 로그인 후 이용할 수 있습니다.');
-          }
+        if (window.sbUser) {
+          try { sessionStorage.removeItem('cg_pending_career'); } catch (e) {}
+          state.pendingCareerEnter = false;
+          enterGameMode('career');
           return;
         }
-        enterGameMode('career');
+        state.pendingCareerEnter = true;
+        try { sessionStorage.setItem('cg_pending_career', '1'); } catch (e) {}
+        if (window.sbAuth && typeof window.sbAuth.openLoginModal === 'function') {
+          window.sbAuth.openLoginModal();
+        } else {
+          alert('커리어 모드는 Google 로그인 후 이용할 수 있습니다.');
+        }
       });
     }
     if (dom.btnResetCareer) {
@@ -2366,23 +2369,40 @@
         });
       });
     }
-
-    window.addEventListener('sb-auth-changed', async (e) => {
-      const user = e && e.detail ? e.detail.user : null;
-      if (user) {
-        await fetchCareerProfileFromDB();
-        if (state.pendingCareerEnter) {
-          state.pendingCareerEnter = false;
-          if (window.sbAuth && typeof window.sbAuth.closeLoginModal === 'function') {
-            window.sbAuth.closeLoginModal();
-          }
-          enterGameMode('career');
-        }
-      } else {
-        updateLobbyCareerUI();
-      }
-    });
   }
+
+  async function handleAuthUserReady(user) {
+    if (!user) {
+      updateLobbyCareerUI();
+      return;
+    }
+
+    init();
+    await fetchCareerProfileFromDB();
+
+    let hasPendingFlag = false;
+    try {
+      hasPendingFlag = sessionStorage.getItem('cg_pending_career') === '1';
+    } catch (e) {}
+
+    if (state.pendingCareerEnter || hasPendingFlag) {
+      state.pendingCareerEnter = false;
+      try { sessionStorage.removeItem('cg_pending_career'); } catch (e) {}
+      if (window.sbAuth && typeof window.sbAuth.closeLoginModal === 'function') {
+        window.sbAuth.closeLoginModal();
+      }
+      const tabBtn = document.getElementById('tabBtnChartGame');
+      if (tabBtn && !tabBtn.classList.contains('active')) {
+        tabBtn.click();
+      }
+      enterGameMode('career');
+    }
+  }
+
+  window.addEventListener('sb-auth-changed', (e) => {
+    const user = e && e.detail ? e.detail.user : null;
+    handleAuthUserReady(user);
+  });
 
   function init() {
     if (state.initialized) return;
@@ -2400,6 +2420,22 @@
     init();
     fetchCareerProfileFromDB();
     fetchAndRenderHallOfFame(activeHofPeriod);
+
+    let hasPendingFlag = false;
+    try {
+      hasPendingFlag = sessionStorage.getItem('cg_pending_career') === '1';
+    } catch (e) {}
+
+    if (window.sbUser && (hasPendingFlag || state.pendingCareerEnter)) {
+      state.pendingCareerEnter = false;
+      try { sessionStorage.removeItem('cg_pending_career'); } catch (e) {}
+      if (window.sbAuth && typeof window.sbAuth.closeLoginModal === 'function') {
+        window.sbAuth.closeLoginModal();
+      }
+      enterGameMode('career');
+      return;
+    }
+
     if (dom.gamePlayView && dom.gamePlayView.style.display !== 'none') {
       handleResize();
       triggerInsightUpdate(true);

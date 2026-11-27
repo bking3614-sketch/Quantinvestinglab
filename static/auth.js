@@ -7,38 +7,58 @@
 (function () {
   'use strict';
 
-  const DEFAULT_SUPABASE_URL = '[여기에_Project_URL_붙여넣기]';
-  const DEFAULT_SUPABASE_ANON_KEY = '[여기에_anon_public_key_붙여넣기]';
+  const SUPABASE_URL = "https://uajiubjthfwgvndvxhxq.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_pCNdOspjwWg94vT3GFEusQ_mBrB9Vob";
 
   window.sbClient = window.sbClient || null;
   window.sbUser = window.sbUser || null;
+  let lastInitError = null;
 
-  function getSupabaseConfig() {
-    return {
-      url: (window.SUPABASE_URL || DEFAULT_SUPABASE_URL).trim(),
-      anonKey: (window.SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY).trim()
-    };
+  function handlePendingCareerRedirect(user) {
+    if (!user) return;
+    try {
+      if (sessionStorage.getItem('cg_pending_career') === '1') {
+        closeLoginModal();
+        const tabBtn = document.getElementById('tabBtnChartGame');
+        if (tabBtn && !tabBtn.classList.contains('active')) {
+          tabBtn.click();
+        }
+      }
+    } catch (e) {}
   }
 
   function dispatchAuthChanged(user) {
     window.sbUser = user || null;
     updateAuthModalUI();
+    handlePendingCareerRedirect(window.sbUser);
     window.dispatchEvent(new CustomEvent('sb-auth-changed', {
       detail: { user: window.sbUser }
     }));
   }
 
   async function initSupabaseAuth() {
-    const cfg = getSupabaseConfig();
-    if (!cfg.url || !cfg.anonKey || !window.supabase || typeof window.supabase.createClient !== 'function') {
+    lastInitError = null;
+
+    // 기존 localStorage에 남아있을 수 있는 잘못된 설정 무시 및 정리
+    try {
+      localStorage.removeItem('sb_project_config_v1');
+    } catch (e) {}
+
+    if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+      lastInitError = 'Supabase JS SDK(@supabase/supabase-js@2)가 로드되지 않았습니다.';
       window.sbClient = null;
       dispatchAuthChanged(null);
       return false;
     }
 
     try {
-      window.sbClient = window.supabase.createClient(cfg.url, cfg.anonKey);
-      const { data } = await window.sbClient.auth.getSession();
+      const url = SUPABASE_URL.trim();
+      const anonKey = SUPABASE_ANON_KEY.trim();
+      window.sbClient = window.supabase.createClient(url, anonKey);
+
+      const { data, error } = await window.sbClient.auth.getSession();
+      if (error) throw error;
+
       const currentUser = data && data.session ? data.session.user : null;
       dispatchAuthChanged(currentUser);
 
@@ -48,7 +68,8 @@
       });
       return true;
     } catch (err) {
-      console.warn('[Auth] Supabase 초기화 실패:', err);
+      lastInitError = err && err.message ? err.message : String(err);
+      console.warn('[Auth] Supabase 초기화 실패:', lastInitError);
       window.sbClient = null;
       dispatchAuthChanged(null);
       return false;
@@ -57,14 +78,17 @@
 
   function updateAuthModalUI() {
     const statusEl = document.getElementById('sbLoginStatusMsg');
-    if (statusEl) {
-      if (window.sbUser) {
-        statusEl.textContent = `로그인됨: ${window.sbUser.email || window.sbUser.id}`;
-        statusEl.style.color = '#6ee7b7';
-      } else {
-        statusEl.textContent = 'Google 계정으로 로그인하면 커리어 모드 자산이 클라우드에 저장됩니다.';
-        statusEl.style.color = '#94a3b8';
-      }
+    if (!statusEl) return;
+
+    if (window.sbUser) {
+      statusEl.textContent = `로그인됨: ${window.sbUser.email || window.sbUser.id}`;
+      statusEl.style.color = '#6ee7b7';
+    } else if (lastInitError) {
+      statusEl.textContent = `Supabase 연결 오류: ${lastInitError}`;
+      statusEl.style.color = '#fca5a5';
+    } else {
+      statusEl.textContent = 'Google 계정으로 로그인하면 커리어 모드 자산이 클라우드에 저장됩니다.';
+      statusEl.style.color = '#94a3b8';
     }
   }
 
@@ -86,14 +110,23 @@
   }
 
   async function signInWithGoogle() {
+    const statusEl = document.getElementById('sbLoginStatusMsg');
+
     if (!window.sbClient) {
-      const statusEl = document.getElementById('sbLoginStatusMsg');
+      await initSupabaseAuth();
+    }
+
+    if (!window.sbClient) {
       if (statusEl) {
-        statusEl.textContent = '인증 서비스에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.';
+        statusEl.textContent = `Supabase 연결 오류: ${lastInitError || '클라이언트 초기화에 실패했습니다.'}`;
         statusEl.style.color = '#fca5a5';
       }
       return;
     }
+
+    try {
+      sessionStorage.setItem('cg_pending_career', '1');
+    } catch (e) {}
 
     try {
       const { error } = await window.sbClient.auth.signInWithOAuth({
@@ -104,9 +137,9 @@
       });
       if (error) throw error;
     } catch (err) {
-      const statusEl = document.getElementById('sbLoginStatusMsg');
+      const msg = err && err.message ? err.message : String(err);
       if (statusEl) {
-        statusEl.textContent = `Google 로그인 오류: ${err.message}`;
+        statusEl.textContent = `Google 로그인 오류: ${msg}`;
         statusEl.style.color = '#fca5a5';
       }
     }
