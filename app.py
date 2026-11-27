@@ -1,6 +1,8 @@
 import datetime
 import os
+import re
 import threading
+import time
 import warnings
 import numpy as np
 import pandas as pd
@@ -2849,6 +2851,26 @@ def api_checklist_signals():
     })
 
 
+def _sanitize_api_error(err) -> str:
+    """에러 메시지에서 ?key=AIza... 등 민감한 API 키 쿼리 문자열을 완전히 제거"""
+    msg = str(err or "")
+    msg = re.sub(r"([?&]key=)[^&\s\"']+", r"\1***", msg, flags=re.IGNORECASE)
+    msg = re.sub(r"AIza[0-9A-Za-z\-_]{20,}", "AIza***", msg)
+    return msg
+
+
+def _post_gemini_with_retry(url: str, payload: dict, timeout: int = 30, max_retries: int = 2, delay: float = 1.5):
+    """Gemini API 호출 시 429/503 일시 과부하 발생 시 1.5초 대기 후 최대 2회 자동 재시도"""
+    last_resp = None
+    for attempt in range(max_retries + 1):
+        last_resp = requests.post(url, json=payload, timeout=timeout)
+        if last_resp.status_code not in (429, 503):
+            return last_resp
+        if attempt < max_retries:
+            time.sleep(delay)
+    return last_resp
+
+
 @app.route('/api/ai_analyst_chat', methods=['POST', 'OPTIONS'])
 def api_ai_analyst_chat():
     """Gemini / OpenAI / Anthropic REST API 기반 멀티 프로바이더 퀀트 애널리스트 챗봇"""
@@ -2949,14 +2971,16 @@ def api_ai_analyst_chat():
                 }
                 for m in clean_messages
             ]
-            resp = requests.post(
+            resp = _post_gemini_with_retry(
                 gemini_url,
-                json={
+                {
                     "systemInstruction": {"parts": [{"text": system_prompt}]},
                     "contents": gemini_contents,
                     "generationConfig": {"temperature": 0.3}
                 },
-                timeout=30
+                timeout=30,
+                max_retries=2,
+                delay=1.5
             )
             if resp.status_code in (400, 401, 403):
                 err_msg = ""
@@ -2966,10 +2990,13 @@ def api_ai_analyst_chat():
                     pass
                 if "API_KEY_INVALID" in err_msg or resp.status_code in (401, 403):
                     return jsonify({"ok": False, "error": "Gemini API 키가 유효하지 않거나 권한이 없습니다. 키를 다시 확인해 주세요."})
-                return jsonify({"ok": False, "error": f"Gemini 요청 오류: {err_msg or resp.status_code}"})
+                return jsonify({"ok": False, "error": f"Gemini 요청 오류: {_sanitize_api_error(err_msg) or resp.status_code}"})
             if resp.status_code == 429:
-                return jsonify({"ok": False, "error": "Gemini API 호출 한도(Quota/Rate Limit)를 초과했습니다. 잠시 후 다시 시도해 주세요."})
-            resp.raise_for_status()
+                return jsonify({"ok": False, "error": "Gemini API 호출 한도(429)를 초과했습니다. 잠시 후 다시 시도해 주세요."})
+            if resp.status_code == 503:
+                return jsonify({"ok": False, "error": "Google Gemini 서버가 일시적으로 과부하 상태입니다(503). 잠시 후 다시 시도해 주세요."})
+            if not resp.ok:
+                return jsonify({"ok": False, "error": f"Gemini 서버 응답 오류 (HTTP {resp.status_code}). 잠시 후 다시 시도해 주세요."})
             reply = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
         return jsonify({"ok": True, "reply": reply})
@@ -2977,7 +3004,7 @@ def api_ai_analyst_chat():
     except requests.Timeout:
         return jsonify({"ok": False, "error": "AI 서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."})
     except Exception as e:
-        return jsonify({"ok": False, "error": f"AI 응답 생성 중 오류가 발생했습니다: {e}"})
+        return jsonify({"ok": False, "error": f"AI 응답 생성 중 오류가 발생했습니다: {_sanitize_api_error(e)}"})
 
 
 # Vercel 서버 시작 시 즉시 내장 캐시 데이터를 메모리에 적재

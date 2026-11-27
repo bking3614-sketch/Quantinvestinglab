@@ -4194,6 +4194,27 @@ def api_stock_insight():
 _SEC_FILING_SUMMARY_CACHE: Dict[Tuple[str, str], str] = {}
 
 
+def _sanitize_gemini_error(err) -> str:
+    """에러 메시지에서 ?key=AIza... 쿼리 문자열 및 API 키 노출을 차단"""
+    msg = str(err or "")
+    msg = re.sub(r"([?&]key=)[^&\s\"']+", r"\1***", msg, flags=re.IGNORECASE)
+    msg = re.sub(r"AIza[0-9A-Za-z\-_]{20,}", "AIza***", msg)
+    return msg
+
+
+def _post_gemini_with_retry(url: str, payload: dict, timeout: int = 25, max_retries: int = 2, delay: float = 1.5):
+    """Gemini API 호출 시 429/503 일시 과부하 발생 시 1.5초 대기 후 최대 2회 자동 재시도"""
+    import time as _time
+    last_resp = None
+    for attempt in range(max_retries + 1):
+        last_resp = requests.post(url, json=payload, timeout=timeout)
+        if last_resp.status_code not in (429, 503):
+            return last_resp
+        if attempt < max_retries:
+            _time.sleep(delay)
+    return last_resp
+
+
 def _clean_html_to_text(raw_html: str) -> str:
     """HTML 태그·스크립트·스타일을 제거하고 순수 본문 텍스트만 추출"""
     import html as html_lib
@@ -4287,15 +4308,25 @@ def api_sec_filing_summary():
 
     try:
         gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-4-hydrogen:generateContent?key={api_key}"
-        resp = requests.post(
+        resp = _post_gemini_with_retry(
             gemini_url,
-            json={
+            {
                 "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": {"temperature": 0.2}
             },
-            timeout=25
+            timeout=25,
+            max_retries=2,
+            delay=1.5
         )
-        resp.raise_for_status()
+        if resp.status_code in (401, 403):
+            return jsonify({"ok": False, "message": "Gemini API 키가 유효하지 않거나 권한이 없습니다. 키를 확인해 주세요."})
+        if resp.status_code == 429:
+            return jsonify({"ok": False, "message": "Gemini API 호출 한도(429)를 초과했습니다. 잠시 후 다시 시도해 주세요."})
+        if resp.status_code == 503:
+            return jsonify({"ok": False, "message": "Google Gemini 서버가 일시적으로 과부하 상태입니다(503). 잠시 후 다시 시도해 주세요."})
+        if not resp.ok:
+            return jsonify({"ok": False, "message": f"Gemini 서버 응답 오류 (HTTP {resp.status_code}). 잠시 후 다시 시도해 주세요."})
+
         res_json = resp.json()
         summary_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
         _SEC_FILING_SUMMARY_CACHE[cache_key] = summary_text
@@ -4304,9 +4335,12 @@ def api_sec_filing_summary():
             "cached": False,
             "summary": summary_text
         })
+    except requests.Timeout:
+        return jsonify({"ok": False, "message": "Gemini AI 서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."})
     except Exception as e:
-        logger.warning(f"Gemini sec_filing_summary failed for {ticker}: {e}")
-        return jsonify({"ok": False, "message": f"Gemini AI 요약 생성 실패: {e}"})
+        safe_err = _sanitize_gemini_error(e)
+        logger.warning(f"Gemini sec_filing_summary failed for {ticker}: {safe_err}")
+        return jsonify({"ok": False, "message": f"Gemini AI 요약 생성 실패: {safe_err}"})
 
 
 @custom_quant_bp.record_once
