@@ -29,31 +29,23 @@
         </div>
       </div>
 
-      <!-- 🌟 상단 3대 메인 탭 네비게이션 🌟 -->
+      <!-- 🌟 상단 3대 메인 탭 네비게이션 (HOME / 전략 / 차트게임) 🌟 -->
       <nav class="main-tab-nav">
         <button type="button" class="tab-btn active" id="tabBtnChecklist" data-tab="checklist">
           <i class="fa-solid fa-house"></i>
           <span>HOME</span>
         </button>
-        <button type="button" class="tab-btn" id="tabBtnSeasonality" data-tab="seasonality">
-          <i class="fa-solid fa-traffic-light"></i>
-          <span class="two-line-tab">My Quant<br>Investing Labs</span>
+
+        <button type="button" class="tab-btn" id="tabBtnStrategyGroup">
+          <i class="fa-solid fa-layer-group"></i>
+          <span>전략 (STRATEGY)</span>
+          <i class="fa-solid fa-chevron-down" style="font-size: 0.72rem; margin-left: 4px; opacity: 0.8;"></i>
         </button>
-        <button type="button" class="tab-btn" id="tabBtnChecklist2" data-tab="checklist"><i class="fa-solid fa-traffic-light"></i><span>체크리스트</span></button>
-        <button type="button" class="tab-btn" id="tabBtnPermanent" data-tab="permanent">
-          <i class="fa-solid fa-shield-halved"></i>
-          <span>영구 포트폴리오</span>
+
+        <button type="button" class="tab-btn" id="tabBtnChartGame" data-tab="chartgame">
+          <i class="fa-solid fa-gamepad"></i>
+          <span>차트게임</span>
         </button>
-        <button type="button" class="tab-btn" id="tabBtnAllWeather" data-tab="allweather">
-          <i class="fa-solid fa-cloud-sun-rain"></i>
-          <span>올웨더 포트폴리오 (Ray Dalio)</span>
-        </button>
-        <button type="button" class="tab-btn" id="tabBtnDynamic" data-tab="dynamic">
-          <i class="fa-solid fa-compass"></i>
-          <span>동적 자산 배분 (Dynamic)</span>
-        </button>
-        <button type="button" class="tab-btn" id="tabBtnCustomQuant" data-tab="customquant"><i class="fa-solid fa-wand-magic-sparkles"></i><span>마법공식</span></button>
-        <button type="button" class="tab-btn" id="tabBtnChartGame" data-tab="chartgame"><i class="fa-solid fa-gamepad"></i><span>차트게임</span></button>
       </nav>
 
       <div class="nav-controls">
@@ -66,6 +58,33 @@
         </button>
       </div>
     </header>
+
+    <!-- 🌟 [전략 (STRATEGY)] 하위 5대 전략 서브 네비게이션 바 🌟 -->
+    <div class="strategy-sub-nav-bar" id="strategySubNavBar" style="display: none;">
+      <div class="strategy-sub-nav-inner">
+        <span class="strategy-sub-label"><i class="fa-solid fa-compass-drafting"></i> 퀀트 전략 선택:</span>
+        <button type="button" class="tab-btn strategy-sub-btn active" id="tabBtnSeasonality" data-tab="seasonality">
+          <i class="fa-solid fa-traffic-light"></i>
+          <span>My Quant Investing Labs</span>
+        </button>
+        <button type="button" class="tab-btn strategy-sub-btn" id="tabBtnPermanent" data-tab="permanent">
+          <i class="fa-solid fa-shield-halved"></i>
+          <span>영구 포트폴리오</span>
+        </button>
+        <button type="button" class="tab-btn strategy-sub-btn" id="tabBtnAllWeather" data-tab="allweather">
+          <i class="fa-solid fa-cloud-sun-rain"></i>
+          <span>올웨더 포트폴리오 (Ray Dalio)</span>
+        </button>
+        <button type="button" class="tab-btn strategy-sub-btn" id="tabBtnDynamic" data-tab="dynamic">
+          <i class="fa-solid fa-compass"></i>
+          <span>동적 자산 배분 (Dynamic)</span>
+        </button>
+        <button type="button" class="tab-btn strategy-sub-btn" id="tabBtnCustomQuant" data-tab="customquant">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+          <span>마법공식</span>
+        </button>
+      </div>
+    </div>
 
     <!-- ════════════════════════════════════════════════════════════
          [Tab 1] ETF 계절성 스위칭 알파 터미널

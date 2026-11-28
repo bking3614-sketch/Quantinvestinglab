@@ -3929,3 +3929,55 @@ async function pollStatusUntilReady(maxAttempts = 30) {
 
   init();
 });
+
+// ==============================================================================
+// [Navigation] 3대 메인 탭(HOME / 전략 / 차트게임) & 전략 서브바 제어
+// ==============================================================================
+document.addEventListener("DOMContentLoaded", () => {
+  const btnHome = document.getElementById("tabBtnChecklist");
+  const btnStrategyGroup = document.getElementById("tabBtnStrategyGroup");
+  const btnChartGame = document.getElementById("tabBtnChartGame");
+  const subNavBar = document.getElementById("strategySubNavBar");
+  const subBtns = document.querySelectorAll(".strategy-sub-btn");
+
+  let lastStrategyBtn = document.getElementById("tabBtnSeasonality");
+
+  if (!btnStrategyGroup || !subNavBar) return;
+
+  // 1) [전략 (STRATEGY)] 메인 버튼 클릭 시
+  btnStrategyGroup.addEventListener("click", () => {
+    subNavBar.style.display = "block";
+
+    // 메인 탭 활성 표시를 [전략]으로 변경
+    [btnHome, btnChartGame].forEach((b) => b && b.classList.remove("active"));
+    btnStrategyGroup.classList.add("active");
+
+    // 가장 최근 선택했던 전략(기본: My Quant Investing Labs) 실행
+    if (lastStrategyBtn) {
+      lastStrategyBtn.click();
+    }
+  });
+
+  // 2) 하위 5개 전략 버튼 클릭 시
+  subBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      lastStrategyBtn = btn;
+      subNavBar.style.display = "block";
+
+      [btnHome, btnChartGame].forEach((b) => b && b.classList.remove("active"));
+      btnStrategyGroup.classList.add("active");
+
+      subBtns.forEach((sb) => sb.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+
+  // 3) [HOME] 또는 [차트게임] 클릭 시 전략 서브바 닫기
+  [btnHome, btnChartGame].forEach((mainBtn) => {
+    if (!mainBtn) return;
+    mainBtn.addEventListener("click", () => {
+      subNavBar.style.display = "none";
+      btnStrategyGroup.classList.remove("active");
+    });
+  });
+});
