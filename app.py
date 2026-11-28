@@ -3416,7 +3416,24 @@ def api_stock_analysis_us():
 
     except Exception as e:
         return jsonify({"status": "error", "message": f"해외주식 분석 오류: {str(e)}"}), 500
-    
+
+# PWA 필수 파일들을 루트(/) 경로에서도 서빙하도록 연결 (Vercel과 경로 통일)
+@app.route("/manifest.json")
+def serve_manifest():
+    return send_from_directory("static", "manifest.json", mimetype="application/manifest+json")
+
+@app.route("/sw.js")
+def serve_sw():
+    return send_from_directory("static", "sw.js", mimetype="application/javascript")
+
+@app.route("/icon-192.png")
+def serve_icon_192():
+    return send_from_directory("static", "icon-192.png", mimetype="image/png")
+
+@app.route("/icon-512.png")
+def serve_icon_512():
+    return send_from_directory("static", "icon-512.png", mimetype="image/png")
+
 if __name__ == '__main__':
     loader_thread = threading.Thread(target=_load_or_fetch_data)
     loader_thread.daemon = True
