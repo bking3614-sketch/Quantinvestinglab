@@ -3041,3 +3041,52 @@
     padding-right: 0 !important;
   }
 }
+
+@media (max-width: 768px) {
+  /* 대시보드 HOME 매수/매도 체크리스트 카드 폭 고정 */
+  #paneHome .table-panel,
+  #paneHome .card {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 체크리스트 테이블: 한 줄 강제(nowrap) 해제 및 화면 폭에 맞춤 */
+  #paneHome table {
+    width: 100% !important;
+    table-layout: fixed !important;
+  }
+
+  #paneHome table th,
+  #paneHome table td {
+    white-space: normal !important;
+    word-break: keep-all !important;
+    overflow-wrap: break-word !important;
+    padding: 8px 5px !important;
+    font-size: 0.74rem !important;
+    line-height: 1.35 !important;
+    vertical-align: middle !important;
+  }
+
+  /* 4개 열 비율 배분: 신호등(15%) / 조건 항목(32%) / 기준(27%) / 현재 수치(26%) */
+  #paneHome table th:nth-child(1),
+  #paneHome table td:nth-child(1) {
+    width: 15% !important;
+    white-space: nowrap !important;
+  }
+
+  #paneHome table th:nth-child(2),
+  #paneHome table td:nth-child(2) {
+    width: 32% !important;
+  }
+
+  #paneHome table th:nth-child(3),
+  #paneHome table td:nth-child(3) {
+    width: 27% !important;
+  }
+
+  #paneHome table th:nth-child(4),
+  #paneHome table td:nth-child(4) {
+    width: 26% !important;
+  }
+}

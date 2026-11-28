@@ -160,8 +160,9 @@
   padding: 11px 14px;
   border-radius: 12px;
   font-size: 0.83rem;
-  line-height: 1.55;
-  word-break: break-word;
+  line-height: 1.6;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .ai-bubble.user {
@@ -212,6 +213,16 @@
 }
 
 /* AI 마크다운 렌더링 */
+.ai-md-body {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  line-height: 1.62;
+}
+
+.ai-md-body > div {
+  margin-bottom: 4px;
+}
+
 .ai-md-body strong {
   color: #c7d2fe;
 }
@@ -232,7 +243,8 @@
 }
 
 .ai-md-body li {
-  margin: 3px 0;
+  margin: 4px 0;
+  line-height: 1.58;
 }
 
 .ai-md-table-wrap {
@@ -256,6 +268,7 @@
 .ai-md-table th {
   background: rgba(99, 102, 241, 0.15);
   color: #e0e7ff;
+  white-space: nowrap;
 }
 
 .ai-chat-input-bar {
@@ -266,6 +279,7 @@
   align-items: flex-end;
   gap: 10px;
 }
+
 
 .ai-chat-textarea {
   flex: 1;

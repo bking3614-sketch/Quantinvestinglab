@@ -2759,3 +2759,157 @@ input[type="range"]::-webkit-slider-thumb:hover {
   cursor: pointer;
 }
 
+/* =========================================================
+   상단 메인 탭 네비게이션 & 전략 서브바 줄바꿈 방지
+   ========================================================= */
+
+/* 1. 메인 탭 네비게이션 (HOME / 전략 / 차트게임) */
+.main-tab-nav {
+  display: flex;
+  flex-wrap: nowrap;       /* 버튼들이 다음 줄로 떨어지지 않게 고정 */
+  overflow-x: auto;        /* 화면이 좁아지면 가로 스크롤 허용 */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;   /* Firefox 스크롤바 숨김 */
+}
+.main-tab-nav::-webkit-scrollbar {
+  display: none;           /* Chrome, Safari 스크롤바 숨김 */
+}
+
+.main-tab-nav .tab-btn {
+  white-space: nowrap;     /* 버튼 내부 텍스트 줄바꿈 금지 */
+  flex-shrink: 0;          /* 버튼 너비가 강제로 찌그러지는 현상 방지 */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 2. 전략 서브바 (My Quant / 영구 / 올웨더 / 동적자산배분 / 마법공식) */
+.strategy-sub-nav-inner {
+  display: flex;
+  flex-wrap: nowrap;       /* 서브 탭 한 줄 유지 */
+  overflow-x: auto;        /* 모바일에서 가로 스와이프 가능하도록 설정 */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.strategy-sub-nav-inner::-webkit-scrollbar {
+  display: none;
+}
+
+.strategy-sub-nav-inner .strategy-sub-btn {
+  white-space: nowrap;     /* 버튼 내부 텍스트 줄바꿈 금지 */
+  flex-shrink: 0;          /* 텍스트 길이에 맞춰 버튼 너비 유지 */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.strategy-sub-nav-inner .strategy-sub-label {
+  white-space: nowrap;
+}
+
+
+/* ========================================================
+   한국어 텍스트 줄바꿈(Word-Break) 및 UI 깨짐 방지 규칙
+   ======================================================== */
+body,
+p,
+h1, h2, h3, h4,
+label,
+.field-desc,
+.banner-desc,
+.chart-subtitle,
+.summary-item,
+.dyn-desc-text,
+.rationale-desc,
+.cg-lobby-desc,
+.cq-nl-subtitle {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* 버튼, 배지, 테이블 헤더 텍스트 2줄 깨짐 방지 */
+.tab-btn,
+.strategy-sub-btn,
+.btn-preset,
+.btn-quick-period,
+.btn-quick-rebal,
+.winner-badge,
+.cl-signal-badge,
+.quant-table th,
+.cq-table th,
+.cl-table th,
+.crisis-table th {
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  /* 모바일에서는 상단/서브바 버튼 패딩과 폰트를 살짝 줄여 한눈에 들어오게 조정 */
+  .main-tab-nav .tab-btn,
+  .strategy-sub-nav-inner .strategy-sub-btn {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+}
+
+/* 안내 배너, 설명 문구, 차트 부제목 한국어 어절 단위 줄바꿈 */
+.field-desc,
+.banner-desc,
+.chart-subtitle,
+.chart-notice-bar span,
+.dyn-desc-text,
+.rationale-desc,
+.cq-nl-subtitle,
+.cg-lobby-subtitle,
+.cg-lobby-desc,
+.cl-updated-text {
+  word-break: keep-all;       /* 한글 단어(어절)가 중간에 끊기지 않도록 유지 */
+  overflow-wrap: break-word;  /* 긴 영문 티커/URL이 컨테이너를 뚫고 나가지 않도록 방지 */
+  line-height: 1.55;          /* 2줄 이상 될 때 위아래 줄 간격 확보 */
+}
+
+/* 데스크톱 전용 줄바꿈(<br class="br-desktop">) 모바일 숨김 처리 */
+@media (max-width: 768px) {
+  .br-desktop {
+    display: none;
+  }
+
+  .metric-card .card-title,
+  .cq-kpi-card .cq-kpi-title {
+    font-size: 0.72rem;
+    letter-spacing: -0.03em; /* 자간을 살짝 좁혀 한 줄에 더 많은 글자 수용 */
+  }
+}
+
+/* ========================================================
+   테이블 헤더 & KPI 카드 타이틀 2줄 깨짐 방지
+   ======================================================== */
+
+/* 1. 모든 테이블 헤더(th) 1줄 고정 및 가로 스크롤 유지 */
+.quant-table th,
+.comparison-table th,
+.cq-table th,
+.cq-overfit-table th,
+.cl-table th,
+.cg-fin-table th,
+.cg-hof-table th,
+.cg-logs-table th,
+.dyn-recom-table th {
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+/* 2. KPI 카드 타이틀 & 라벨 1줄 고정 (넘칠 경우 말줄임표 처리) */
+.metric-body {
+  min-width: 0; /* flex 자식 요소의 텍스트 말줄임(...) 정상 작동을 위해 필수 */
+}
+
+.metric-card .card-title,
+.cq-kpi-card .cq-kpi-title,
+.cg-asset-stat .cg-stat-label,
+.cg-stats-kpi-box .cg-stats-kpi-label,
+.cg-result-card .cg-result-label,
+.cq-overfit-metric-box .cq-overfit-metric-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
