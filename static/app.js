@@ -386,20 +386,8 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${sign}${n.toFixed(2)}%`;
   }
 
-  // ✅ [추가] HTML 태그 깨짐 및 XSS 보안 방지를 위한 특수문자 안전 변환기
-  function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
   // ── 초기화: 1월~12월 그리드 생성 ──
   function initMonthsGrid() {
-    if (!el.monthsGrid) return; // ✅ DOM 요소가 없으면 에러 내지 않고 안전하게 종료
     el.monthsGrid.innerHTML = '';
     const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
 
@@ -570,12 +558,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       dropdown.innerHTML = items.map(item => `
-        <div class="dropdown-item" data-sym="${escapeHtml(item.symbol)}" data-name="${escapeHtml(item.name)}" data-cat="${escapeHtml(item.category)}">
+        <div class="dropdown-item" data-sym="${item.symbol}" data-name="${item.name}" data-cat="${item.category}">
           <div class="dropdown-item-left">
-            <span class="dropdown-symbol">${escapeHtml(item.symbol)}</span>
-            <span class="dropdown-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span>
+            <span class="dropdown-symbol">${item.symbol}</span>
+            <span class="dropdown-name" title="${item.name}">${item.name}</span>
           </div>
-          <span class="dropdown-badge">${escapeHtml(item.category)}</span>
+          <span class="dropdown-badge">${item.category}</span>
         </div>
       `).join('');
       dropdown.classList.add('active');
@@ -600,7 +588,11 @@ document.addEventListener('DOMContentLoaded', () => {
       input.focus();
       search('');
     });
-    
+    document.addEventListener('click', (e) => {
+      if (!card.contains(e.target)) {
+        dropdown.classList.remove('active');
+      }
+    });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -626,16 +618,16 @@ document.addEventListener('DOMContentLoaded', () => {
       card.style.borderLeft = `3px solid ${color}`;
 
       const canRemove = state.assets.length > 2 && idx >= 2;
-     card.innerHTML = `
+      card.innerHTML = `
         <div class="season-card-top">
           <div class="season-search-col">
             <div class="search-input-wrapper">
               <i class="fa-solid fa-magnifying-glass search-icon"></i>
-              <input type="text" class="ticker-search-input season-ticker-input" value="${escapeHtml(asset.ticker)}" placeholder="티커 또는 종목명 검색..." autocomplete="off">
+              <input type="text" class="ticker-search-input season-ticker-input" value="${asset.ticker || ''}" placeholder="티커 또는 종목명 검색..." autocomplete="off">
               <button type="button" class="btn-clear-search" style="display:${asset.ticker ? 'block' : 'none'};" title="초기화">&times;</button>
             </div>
             <div class="ticker-dropdown"></div>
-            <span class="season-asset-name">${escapeHtml(asset.name) || '종목을 검색하세요'}</span>
+            <span class="season-asset-name">${asset.name || '종목을 검색하세요'}</span>
           </div>
           <div class="season-weight-col">
             <input type="number" class="season-weight-input" min="0" max="100" step="0.5" value="${asset.weight}">
@@ -730,20 +722,11 @@ document.addEventListener('DOMContentLoaded', () => {
     el.btnSeasonNormalize.addEventListener('click', normalizeSeasonWeights);
   }
 
-  document.addEventListener('click', (e) => {
-    document.querySelectorAll('.season-asset-card').forEach(card => {
-      if (!card.contains(e.target)) {
-        const dropdown = card.querySelector('.ticker-dropdown');
-        if (dropdown) dropdown.classList.remove('active');
-      }
-    });
-  });
-
   // ── 자본금 및 적립금 입력창 연동 ──
   el.initCap.addEventListener('input', (e) => {
     const val = parseInt(e.target.value, 10) || 0;
     state.init_cap = val;
-    if (el.initCapPreview) el.initCapPreview.textContent = formatKoreanMoney(val);
+    el.initCapPreview.textContent = formatKoreanMoney(val);
   });
 
   el.monthlyAdd.addEventListener('input', (e) => {
@@ -984,14 +967,9 @@ async function pollStatusUntilReady(maxAttempts = 30) {
 
     if (!state.isDataReady) {
       showLoading('Yahoo Finance 데이터를 준비하고 있습니다...');
-      const status = await checkDataStatus();
-      if (status !== 'ready') {    // ✅ 'ready'가 아닐 때만 아래 코드 실행!
-        if (status === 'error') {  // 만약 에러 상태라면 로딩창을 끄고 알림 띄우기
-          hideLoading();
-          alert('데이터 로드 중 서버 오류가 발생했습니다. 캐시 파일 상태를 확인해주세요.');
-          return;
-        }
-        pollStatusUntilReady();    // 'loading' 상태라면 준비될 때까지 2초마다 기다리기
+      const ready = await checkDataStatus();
+      if (!ready) {
+        pollStatusUntilReady();
         return;
       }
     }
@@ -1035,7 +1013,7 @@ async function pollStatusUntilReady(maxAttempts = 30) {
     }
   }
 
-  el.btnRunBacktest?.addEventListener('click', runBacktest);
+  el.btnRunBacktest.addEventListener('click', runBacktest);
 
   // ── 대시보드 전체 렌더링 ──
   function renderDashboard(data) {
@@ -1114,9 +1092,9 @@ async function pollStatusUntilReady(maxAttempts = 30) {
         html += `
           <div class="summary-item">
             <i class="fa-solid fa-circle-dot dot"></i>
-            <div style="word-break: keep-all; line-height: 1.55;"><strong>${parts[0]}:</strong> ${parts[1]}</div>
+            <div><strong>${parts[0]}:</strong> ${parts[1]}</div>
           </div>
-       `;
+        `;
       } else {
         html += `
           <div class="summary-item">
@@ -1247,14 +1225,14 @@ async function pollStatusUntilReady(maxAttempts = 30) {
 
       html += `
         <tr>
-          <td style="font-weight: 600; color: #fff; white-space: nowrap;">${r.name}</td>
-          <td style="color: ${isStratWinner ? '#34d399' : '#cbd5e1'}; font-weight: ${isStratWinner ? '700' : '500'}; white-space: nowrap;">
+          <td style="font-weight: 600; color: #fff;">${r.name}</td>
+          <td style="color: ${isStratWinner ? '#34d399' : '#cbd5e1'}; font-weight: ${isStratWinner ? '700' : '500'};">
             ${r.stratVal} ${badgeStrat}
           </td>
-          <td style="color: ${!isStratWinner ? '#f87171' : '#cbd5e1'}; font-weight: ${!isStratWinner ? '700' : '500'}; white-space: nowrap;">
+          <td style="color: ${!isStratWinner ? '#f87171' : '#cbd5e1'}; font-weight: ${!isStratWinner ? '700' : '500'};">
             ${r.bhVal} ${badgeBH}
           </td>
-          <td style="font-weight: 700; color: #38bdf8; white-space: nowrap;">${r.diff}</td>
+          <td style="font-weight: 700; color: #38bdf8;">${r.diff}</td>
         </tr>
       `;
     });
@@ -1695,39 +1673,17 @@ async function pollStatusUntilReady(maxAttempts = 30) {
   // ════════════════════════════════════════════════════════════
   // 🌟 상단 3대 메인 탭 네비게이션 🌟
   // ════════════════════════════════════════════════════════════
-  // ════════════════════════════════════════════════════════════
-  // 🌟 상단 3대 메인 탭(HOME / 전략 / 차트게임) & 전략 서브바 통합 제어 🌟
-  // ════════════════════════════════════════════════════════════
   function setupTabNavigation() {
-    const btnStrategyGroup = document.getElementById('tabBtnStrategyGroup');
-    const subNavBar = document.getElementById('strategySubNavBar');
-    const subBtns = document.querySelectorAll('.strategy-sub-btn');
-    const strategyTabs = ['seasonality', 'permanent', 'allweather', 'dynamic', 'customquant'];
-    let lastStrategyTab = 'seasonality'; // 최근 선택한 전략 기억
-
     function activateTab(tab) {
       state.currentTab = tab;
-      const isStrategy = strategyTabs.includes(tab);
-      if (isStrategy) lastStrategyTab = tab;
-
-      // 1) 전략 서브 네비게이션 바 표시/숨김 일괄 처리
-      if (subNavBar) {
-        subNavBar.style.display = isStrategy ? 'block' : 'none';
-      }
-
-      // 2) 상단 3대 메인 버튼(HOME / 전략 / 차트게임) 활성 표시 정리
-      if (el.tabBtnChecklist) el.tabBtnChecklist.classList.toggle('active', tab === 'checklist');
-      if (btnStrategyGroup) btnStrategyGroup.classList.toggle('active', isStrategy);
-      if (el.tabBtnChartGame) el.tabBtnChartGame.classList.toggle('active', tab === 'chartgame');
-
-      // 3) 하위 5개 전략 버튼 활성 표시 정리
       el.tabBtnSeasonality.classList.toggle('active', tab === 'seasonality');
       el.tabBtnPermanent.classList.toggle('active', tab === 'permanent');
       el.tabBtnAllWeather.classList.toggle('active', tab === 'allweather');
       if (el.tabBtnDynamic) el.tabBtnDynamic.classList.toggle('active', tab === 'dynamic');
       if (el.tabBtnCustomQuant) el.tabBtnCustomQuant.classList.toggle('active', tab === 'customquant');
+      if (el.tabBtnChartGame) el.tabBtnChartGame.classList.toggle('active', tab === 'chartgame');
+      if (el.tabBtnChecklist) el.tabBtnChecklist.classList.toggle('active', tab === 'checklist');
 
-      // 4) 화면 패널 전환
       el.paneSeasonality.style.display = tab === 'seasonality' ? 'block' : 'none';
       el.panePermanent.style.display = tab === 'permanent' ? 'block' : 'none';
       el.paneAllWeather.style.display = tab === 'allweather' ? 'block' : 'none';
@@ -1736,9 +1692,10 @@ async function pollStatusUntilReady(maxAttempts = 30) {
       if (el.paneChartGame) el.paneChartGame.style.display = tab === 'chartgame' ? 'block' : 'none';
       if (el.paneChecklist) el.paneChecklist.style.display = tab === 'checklist' ? 'block' : 'none';
 
-      // 5) 탭 진입 시 최초 1회 데이터 로드
       if (tab === 'chartgame') {
-        if (window.initChartGameIfNeeded) window.initChartGameIfNeeded();
+        if (window.initChartGameIfNeeded) {
+          window.initChartGameIfNeeded();
+        }
       } else if (tab === 'checklist') {
         initChecklistIfNeeded();
       } else if (tab === 'permanent' && !state.perm.latestResult) {
@@ -1746,17 +1703,15 @@ async function pollStatusUntilReady(maxAttempts = 30) {
       } else if (tab === 'allweather' && !state.aw.latestResult) {
         runAllWeatherBacktest();
       } else if (tab === 'dynamic') {
-        if (!state.dynamic.latestSignal) fetchDynamicLiveSignal(state.dynamic.strategy);
-        if (!state.dynamic.latestResult) runDynamicBacktest();
+        if (!state.dynamic.latestSignal) {
+          fetchDynamicLiveSignal(state.dynamic.strategy);
+        }
+        if (!state.dynamic.latestResult) {
+          runDynamicBacktest();
+        }
       }
     }
 
-    // 메인 [전략] 버튼 클릭 시 마지막으로 봤던 전략 탭으로 이동
-    if (btnStrategyGroup) {
-      btnStrategyGroup.addEventListener('click', () => activateTab(lastStrategyTab));
-    }
-
-    // 각 개별 탭 버튼 이벤트 연결
     el.tabBtnSeasonality.addEventListener('click', () => activateTab('seasonality'));
     el.tabBtnPermanent.addEventListener('click', () => activateTab('permanent'));
     el.tabBtnAllWeather.addEventListener('click', () => activateTab('allweather'));
@@ -1845,7 +1800,6 @@ async function pollStatusUntilReady(maxAttempts = 30) {
   }
 
   function setupPermanentPortfolioControls() {
-    if (!el.permInitCap || !el.btnRunPermBacktest) return; // ✅ 영구 포트폴리오 UI가 없으면 안전하게 건너뜀
     // 1. 자본금 및 적립금 연동
     el.permInitCap.addEventListener('input', (e) => {
       const v = parseInt(e.target.value, 10) || 0;
@@ -2119,15 +2073,15 @@ async function pollStatusUntilReady(maxAttempts = 30) {
 
       tr.innerHTML = `
         <td style="font-weight: 700; color: #fff;">
-          <div style="word-break: keep-all;">${c.name}</div>
-          <div style="font-size:0.7rem; color:#64748b; font-weight:normal; word-break: keep-all;">${c.start} ~ ${c.end} | ${c.desc}</div>
+          <div>${c.name}</div>
+          <div style="font-size:0.7rem; color:#64748b; font-weight:normal;">${c.start} ~ ${c.end} | ${c.desc}</div>
         </td>
-        <td class="${pRetClass}" style="font-weight:700; white-space: nowrap;">${formatPercent(c.port_ret_pct)}</td>
-        <td class="${sRetClass}" style="white-space: nowrap;">${formatPercent(c.spy_ret_pct)}</td>
-        <td class="${fRetClass}" style="white-space: nowrap;">${formatPercent(c.f6040_ret_pct)}</td>
-        <td style="color:#34d399; font-weight:600; white-space: nowrap;">${formatPercent(c.port_mdd_pct, false)}</td>
-        <td style="color:#f87171; white-space: nowrap;">${formatPercent(c.spy_mdd_pct, false)}</td>
-        <td class="${alphaClass}" style="font-size:0.95rem; white-space: nowrap;">${c.defense_alpha >= 0 ? '+' : ''}${c.defense_alpha.toFixed(2)}%p 우위</td>
+        <td class="${pRetClass}" style="font-weight:700;">${formatPercent(c.port_ret_pct)}</td>
+        <td class="${sRetClass}">${formatPercent(c.spy_ret_pct)}</td>
+        <td class="${fRetClass}">${formatPercent(c.f6040_ret_pct)}</td>
+        <td style="color:#34d399; font-weight:600;">${formatPercent(c.port_mdd_pct, false)}</td>
+        <td style="color:#f87171;">${formatPercent(c.spy_mdd_pct, false)}</td>
+        <td class="${alphaClass}" style="font-size:0.95rem;">${c.defense_alpha >= 0 ? '+' : ''}${c.defense_alpha.toFixed(2)}%p 우위</td>
       `;
       el.permCrisisTableBody.appendChild(tr);
     });
@@ -2386,7 +2340,6 @@ async function pollStatusUntilReady(maxAttempts = 30) {
   }
 
   function setupAllWeatherControls() {
-    if (!el.awInitCap || !el.btnRunAwBacktest) return; // ✅ 올웨더 UI가 없으면 안전하게 건너뜀
     // 1. 자본금 및 적립금 연동
     el.awInitCap.addEventListener('input', (e) => {
       const v = parseInt(e.target.value, 10) || 0;
@@ -2664,15 +2617,15 @@ async function pollStatusUntilReady(maxAttempts = 30) {
 
       tr.innerHTML = `
         <td style="font-weight: 700; color: #fff;">
-          <div style="word-break: keep-all;">${c.name}</div>
-          <div style="font-size:0.7rem; color:#64748b; font-weight:normal; word-break: keep-all;">${c.start} ~ ${c.end} | ${c.desc}</div>
+          <div>${c.name}</div>
+          <div style="font-size:0.7rem; color:#64748b; font-weight:normal;">${c.start} ~ ${c.end} | ${c.desc}</div>
         </td>
-        <td class="${pRetClass}" style="font-weight:700; white-space: nowrap;">${formatPercent(c.port_ret_pct)}</td>
-        <td class="${sRetClass}" style="white-space: nowrap;">${formatPercent(c.spy_ret_pct)}</td>
-        <td class="${fRetClass}" style="white-space: nowrap;">${formatPercent(c.f6040_ret_pct)}</td>
-        <td style="color:#34d399; font-weight:600; white-space: nowrap;">${formatPercent(c.port_mdd_pct, false)}</td>
-        <td style="color:#f87171; white-space: nowrap;">${formatPercent(c.spy_mdd_pct, false)}</td>
-        <td class="${alphaClass}" style="font-size:0.95rem; white-space: nowrap;">${c.defense_alpha >= 0 ? '+' : ''}${c.defense_alpha.toFixed(2)}%p 우위</td>
+        <td class="${pRetClass}" style="font-weight:700;">${formatPercent(c.port_ret_pct)}</td>
+        <td class="${sRetClass}">${formatPercent(c.spy_ret_pct)}</td>
+        <td class="${fRetClass}">${formatPercent(c.f6040_ret_pct)}</td>
+        <td style="color:#34d399; font-weight:600;">${formatPercent(c.port_mdd_pct, false)}</td>
+        <td style="color:#f87171;">${formatPercent(c.spy_mdd_pct, false)}</td>
+        <td class="${alphaClass}" style="font-size:0.95rem;">${c.defense_alpha >= 0 ? '+' : ''}${c.defense_alpha.toFixed(2)}%p 우위</td>
       `;
       el.awCrisisTableBody.appendChild(tr);
     });
@@ -2999,21 +2952,16 @@ async function pollStatusUntilReady(maxAttempts = 30) {
     fetchDynamicLiveSignal('BAA');
   }
 
- let latestDynSignalReqId = 0; // ✅ [추가] 최신 시그널 요청 번호표
-
   // 라이브 시그널 실시간 호출
   async function fetchDynamicLiveSignal(strategyId) {
-    const reqId = ++latestDynSignalReqId;
     try {
       const res = await fetch(`/api/dynamic_live_signal?strategy=${strategyId}`);
       const data = await res.json();
-      if (reqId !== latestDynSignalReqId) return; // ✅ 다른 전략으로 이미 바꿨으면 무시
       if (data.status === 'success' && data.live_signal) {
         state.dynamic.latestSignal = data.live_signal;
         renderDynamicLiveSignal(data.live_signal);
       }
     } catch (e) {
-      if (reqId !== latestDynSignalReqId) return;
       console.warn('[DYNAMIC] 라이브 시그널 조회 실패:', e);
     }
   }
@@ -3430,25 +3378,24 @@ async function pollStatusUntilReady(maxAttempts = 30) {
 
       return `
         <tr>
-          <td class="crisis-name-cell" style="word-break: keep-all;">
+          <td class="crisis-name-cell">
             <strong>${c.name}</strong>
           </td>
-          <td class="crisis-period-cell" style="white-space: nowrap;">${c.period}</td>
-          <td class="crisis-desc-cell" style="word-break: keep-all;">${c.desc}</td>
-          <td class="num-cell" style="color: ${c.strat_ret >= 0 ? '#34d399' : '#f87171'}; font-weight: 700; white-space: nowrap;">
+          <td class="crisis-period-cell">${c.period}</td>
+          <td class="crisis-desc-cell">${c.desc}</td>
+          <td class="num-cell" style="color: ${c.strat_ret >= 0 ? '#34d399' : '#f87171'}; font-weight: 700;">
             ${c.strat_ret > 0 ? '+' : ''}${c.strat_ret}%
           </td>
-          <td class="num-cell" style="color: ${c.bench_ret >= 0 ? '#34d399' : '#f87171'}; white-space: nowrap;">
+          <td class="num-cell" style="color: ${c.bench_ret >= 0 ? '#34d399' : '#f87171'};">
             ${c.bench_ret > 0 ? '+' : ''}${c.bench_ret}%
           </td>
-          <td class="num-cell ${stratMddClass}" style="color: #fca5a5; white-space: nowrap;">${c.strat_mdd}%</td>
-          <td class="num-cell" style="color: #94a3b8; white-space: nowrap;">${c.bench_mdd}%</td>
-          <td class="num-cell ${alphaClass}" style="font-weight: 700; white-space: nowrap;">
+          <td class="num-cell ${stratMddClass}" style="color: #fca5a5;">${c.strat_mdd}%</td>
+          <td class="num-cell" style="color: #94a3b8;">${c.bench_mdd}%</td>
+          <td class="num-cell ${alphaClass}" style="font-weight: 700;">
             ${c.alpha > 0 ? '+' : ''}${c.alpha}%p
           </td>
         </tr>
       `;
-```[cite: 8]
     }).join('');
   }
 
@@ -3844,14 +3791,9 @@ async function pollStatusUntilReady(maxAttempts = 30) {
     return `<span style="color: ${color}; font-weight: 600;">${sign}${num.toLocaleString()}</span>`;
   }
 
-  // ✅ [추가] 최신 요청 번호표 추적 변수
-  let latestKrReqId = 0;
-  let latestUsReqId = 0;
-
   // 1) 국내주식 펀더멘털 & 수급 API 연동
   async function fetchKrStockAnalysis(query) {
     if (!query) return;
-    const reqId = ++latestKrReqId; // 이번 요청에 고유 번호 발급
     const metaEl = document.getElementById('krAnalysisMeta');
     const fundBody = document.getElementById('krFundTableBody');
     const supplyBody = document.getElementById('krSupplyTableBody');
@@ -3863,7 +3805,6 @@ async function pollStatusUntilReady(maxAttempts = 30) {
     try {
       const resp = await fetch(`/api/stock_analysis/kr?q=${encodeURIComponent(query)}`);
       const res = await resp.json();
-     if (reqId !== latestKrReqId) return; // ✅ 이미 더 최신 검색이 시작됐으면 옛날 응답은 무시!
       if (!resp.ok || res.status === 'error') {
         throw new Error(res.message || '국내주식 데이터 조회 실패');
       }
@@ -3903,7 +3844,6 @@ async function pollStatusUntilReady(maxAttempts = 30) {
         `).join('');
       }
     } catch (err) {
-      if (reqId !== latestKrReqId) return; // ✅ 에러 역시 최신 요청일 때만 표시
       if (metaEl) metaEl.textContent = `조회 오류: ${err.message}`;
       if (fundBody) fundBody.innerHTML = `<tr><td colspan="3" class="cl-empty-cell">${err.message}</td></tr>`;
       if (supplyBody) supplyBody.innerHTML = `<tr><td colspan="4" class="cl-empty-cell">데이터를 불러올 수 없습니다.</td></tr>`;
@@ -3985,24 +3925,59 @@ async function pollStatusUntilReady(maxAttempts = 30) {
     await loadTickers();
     await fetchDateRange();
     await checkDataStatus();
-
-    // ✅ [추가] 상단 데이터 새로고침 버튼 클릭 이벤트 연결
-    if (el.btnRefreshData) {
-      el.btnRefreshData.addEventListener('click', async () => {
-        showLoading('Yahoo Finance 데이터 상태를 다시 확인하고 있습니다...');
-        try {
-          await fetchDateRange();
-          const status = await checkDataStatus();
-          if (status === 'loading') {
-            pollStatusUntilReady();
-            return;
-          }
-        } finally {
-          hideLoading();
-        }
-      });
-    }
   }
 
   init();
+});
+
+// ==============================================================================
+// [Navigation] 3대 메인 탭(HOME / 전략 / 차트게임) & 전략 서브바 제어
+// ==============================================================================
+document.addEventListener("DOMContentLoaded", () => {
+  const btnHome = document.getElementById("tabBtnChecklist");
+  const btnStrategyGroup = document.getElementById("tabBtnStrategyGroup");
+  const btnChartGame = document.getElementById("tabBtnChartGame");
+  const subNavBar = document.getElementById("strategySubNavBar");
+  const subBtns = document.querySelectorAll(".strategy-sub-btn");
+
+  let lastStrategyBtn = document.getElementById("tabBtnSeasonality");
+
+  if (!btnStrategyGroup || !subNavBar) return;
+
+  // 1) [전략 (STRATEGY)] 메인 버튼 클릭 시
+  btnStrategyGroup.addEventListener("click", () => {
+    subNavBar.style.display = "block";
+
+    // 메인 탭 활성 표시를 [전략]으로 변경
+    [btnHome, btnChartGame].forEach((b) => b && b.classList.remove("active"));
+    btnStrategyGroup.classList.add("active");
+
+    // 가장 최근 선택했던 전략(기본: My Quant Investing Labs) 실행
+    if (lastStrategyBtn) {
+      lastStrategyBtn.click();
+    }
+  });
+
+  // 2) 하위 5개 전략 버튼 클릭 시
+  subBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      lastStrategyBtn = btn;
+      subNavBar.style.display = "block";
+
+      [btnHome, btnChartGame].forEach((b) => b && b.classList.remove("active"));
+      btnStrategyGroup.classList.add("active");
+
+      subBtns.forEach((sb) => sb.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+
+  // 3) [HOME] 또는 [차트게임] 클릭 시 전략 서브바 닫기
+  [btnHome, btnChartGame].forEach((mainBtn) => {
+    if (!mainBtn) return;
+    mainBtn.addEventListener("click", () => {
+      subNavBar.style.display = "none";
+      btnStrategyGroup.classList.remove("active");
+    });
+  });
 });
