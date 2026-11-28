@@ -2712,29 +2712,51 @@ def _fetch_kr_pbr_metrics() -> tuple[float | None, float | None]:
         except Exception:
             return None
 
-    # 1-A) [신규 추가] 네이버 금융 KOSPI 지수 페이지 HTML 파싱 (해외 클라우드 IP에서도 정상 작동)
+    # 1-A) [변경] 네이버 모바일 지수 JSON API (삼성전자 PBR 조회와 동일한 해외 IP 허용 경로)
     try:
-        r_nv = requests.get(
-            "https://finance.naver.com/sise/sise_index.naver?code=KOSPI",
-            headers={**headers, "Referer": "https://finance.naver.com/"},
-            timeout=6,
-        )
-        if r_nv.status_code == 200:
-            html_txt = r_nv.content.decode("euc-kr", "replace")
-            soup = BeautifulSoup(html_txt, "html.parser")
-            for th in soup.find_all(["th", "dt", "span"]):
-                if "PBR" in th.get_text(strip=True).upper():
-                    nxt = th.find_next(["td", "dd", "em", "strong"])
-                    if nxt:
-                        val = _to_float(nxt.get_text(strip=True))
+        for ep in ("basic", "integration"):
+            r_m = requests.get(
+                f"https://m.stock.naver.com/api/index/KOSPI/{ep}",
+                headers={**headers, "Referer": "https://m.stock.naver.com/domestic/index/KOSPI/total"},
+                timeout=3,
+            )
+            if r_m.status_code == 200:
+                j = r_m.json()
+                for item in j.get("totalInfos", []):
+                    if str(item.get("code", "")).lower() == "pbr":
+                        val = _to_float(item.get("value"))
                         if val is not None and 0.3 <= val <= 5.0:
                             kospi_pbr = round(val, 2)
                             break
+                if kospi_pbr is None and j.get("pbr"):
+                    val = _to_float(j.get("pbr"))
+                    if val is not None and 0.3 <= val <= 5.0:
+                        kospi_pbr = round(val, 2)
+            if kospi_pbr is not None:
+                break
     except Exception:
         pass
 
-    # 1-B) [순서 이동] KRX 공식 API (기존 1-A 코드를 2순위로 내림)
+    # 1-B) [신규] KODEX 200(069500) 네이버 모바일 API PBR (KOSPI 대표 지수 추종 ETF)
     if kospi_pbr is None:
+        try:
+            r_etf = requests.get(
+                "https://m.stock.naver.com/api/stock/069500/integration",
+                headers={**headers, "Referer": "https://m.stock.naver.com/"},
+                timeout=3,
+            )
+            if r_etf.status_code == 200:
+                for item in r_etf.json().get("totalInfos", []):
+                    if str(item.get("code", "")).lower() == "pbr":
+                        val = _to_float(item.get("value"))
+                        if val is not None and 0.3 <= val <= 5.0:
+                            kospi_pbr = round(val, 2)
+                            break
+        except Exception:
+            pass
+
+    # 1-C) [수정] 국내 로컬 PC 실행용 KRX 공식 API (Vercel 환경에서는 건너뛰어 5초 지연 방지)
+    if kospi_pbr is None and not os.environ.get("VERCEL"):
         try:
             today = datetime.datetime.now()
             strt_dd = (today - datetime.timedelta(days=14)).strftime("%Y%m%d")
@@ -2756,7 +2778,7 @@ def _fetch_kr_pbr_metrics() -> tuple[float | None, float | None]:
                     "endDd": end_dd,
                     "csvxls_isNo": "false",
                 },
-                timeout=5,
+                timeout=3,
             )
             if krx_resp.status_code == 200:
                 rows = krx_resp.json().get("output", [])
@@ -2768,16 +2790,27 @@ def _fetch_kr_pbr_metrics() -> tuple[float | None, float | None]:
         except Exception:
             pass
 
-    # 1-C) [기존 pykrx 블록 삭제 후 대체] Yahoo Finance KOSPI200 대표 ETF PBR 폴백
+    # 1-D) [변경] 최종 안전망: KOSPI 대표 대형주(삼성전자·현대차·KB금융) 네이버 모바일 PBR 평균 근사
     if kospi_pbr is None:
-        for proxy_sym in ("069500.KS", "EWY"):
-            try:
-                pb = (yf.Ticker(proxy_sym).info or {}).get("priceToBook")
-                if pb is not None and 0.3 <= float(pb) <= 5.0:
-                    kospi_pbr = round(float(pb), 2)
-                    break
-            except Exception:
-                pass
+        try:
+            rep_pbrs = []
+            for rep_code in ("005930", "005380", "105560"):
+                r_rep = requests.get(
+                    f"https://m.stock.naver.com/api/stock/{rep_code}/integration",
+                    headers=headers,
+                    timeout=2,
+                )
+                if r_rep.status_code == 200:
+                    for item in r_rep.json().get("totalInfos", []):
+                        if str(item.get("code", "")).lower() == "pbr":
+                            v = _to_float(item.get("value"))
+                            if v is not None and 0.2 <= v <= 5.0:
+                                rep_pbrs.append(v)
+                                break
+            if rep_pbrs:
+                kospi_pbr = round(sum(rep_pbrs) / len(rep_pbrs), 2)
+        except Exception:
+            pass
 
     # 2) 삼성전자(005930) PBR (네이버 모바일 종목 API -> 실패 시 pykrx -> yfinance)
     try:
