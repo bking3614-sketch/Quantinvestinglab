@@ -2712,21 +2712,41 @@ def _fetch_kr_pbr_metrics() -> tuple[float | None, float | None]:
         except Exception:
             return None
 
-    # 1) KOSPI 지수 PBR (네이버 모바일 지수 API -> 실패 시 pykrx)
+    # 1-A) KRX 한국거래소 공식 지수 PER/PBR API (KOSPI: indIdx='1', indIdx2='001')
     try:
-        r_kospi = requests.get(
-            "https://m.stock.naver.com/api/index/KOSPI/integration",
-            headers={**headers, "Referer": "https://m.stock.naver.com/domestic/index/KOSPI/total"},
-            timeout=5
+        today = datetime.datetime.now()
+        strt_dd = (today - datetime.timedelta(days=14)).strftime("%Y%m%d")
+        end_dd = today.strftime("%Y%m%d")
+        krx_resp = requests.post(
+            "http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd",
+            headers={
+                **headers,
+                "Referer": "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201010106",
+            },
+            data={
+                "bld": "dbms/MDC/STAT/standard/MDCSTAT00701",
+                "locale": "ko_KR",
+                "searchType": "A",
+                "idxIndMidclssCd": "01",
+                "indIdx": "1",
+                "indIdx2": "001",
+                "strtDd": strt_dd,
+                "endDd": end_dd,
+                "csvxls_isNo": "false",
+            },
+            timeout=6,
         )
-        if r_kospi.status_code == 200:
-            for item in r_kospi.json().get("totalInfos", []):
-                if str(item.get("code", "")).lower() == "pbr":
-                    kospi_pbr = _to_float(item.get("value"))
+        if krx_resp.status_code == 200:
+            rows = krx_resp.json().get("output", [])
+            for row in reversed(rows):
+                val = _to_float(row.get("WT_STKPRC_NETASST_RTO"))  # KRX 공식 PBR 컬럼명
+                if val is not None and val > 0:
+                    kospi_pbr = round(val, 2)
                     break
     except Exception:
         pass
 
+    # 1-B) KRX 실패 시 pykrx 폴백
     if kospi_pbr is None and HAS_PYKRX:
         try:
             today = datetime.datetime.now()
