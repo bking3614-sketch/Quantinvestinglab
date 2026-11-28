@@ -2695,6 +2695,84 @@ def _calc_rsi_series(series: pd.Series, period: int = 14) -> pd.Series:
     rsi = 100.0 - (100.0 / (1.0 + rs))
     return rsi.fillna(50.0)
 
+def _fetch_kr_pbr_metrics() -> tuple[float | None, float | None]:
+    """KOSPI 지수 PBR 및 삼성전자(005930) 최신 PBR 조회 (네이버 증권 API 우선, pykrx 폴백)"""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
+    kospi_pbr = None
+    sec_pbr = None
+
+    def _to_float(val):
+        if val is None:
+            return None
+        s = str(val).replace(",", "").replace("배", "").strip()
+        try:
+            return float(s)
+        except Exception:
+            return None
+
+    # 1) KOSPI 지수 PBR (네이버 모바일 지수 API -> 실패 시 pykrx)
+    try:
+        r_kospi = requests.get(
+            "https://m.stock.naver.com/api/index/KOSPI/integration",
+            headers={**headers, "Referer": "https://m.stock.naver.com/domestic/index/KOSPI/total"},
+            timeout=5
+        )
+        if r_kospi.status_code == 200:
+            for item in r_kospi.json().get("totalInfos", []):
+                if str(item.get("code", "")).lower() == "pbr":
+                    kospi_pbr = _to_float(item.get("value"))
+                    break
+    except Exception:
+        pass
+
+    if kospi_pbr is None and HAS_PYKRX:
+        try:
+            today = datetime.datetime.now()
+            s_str = (today - datetime.timedelta(days=14)).strftime("%Y%m%d")
+            e_str = today.strftime("%Y%m%d")
+            df_k = krx.get_index_fundamental(s_str, e_str, "1001")
+            if not df_k.empty and "PBR" in df_k.columns:
+                kospi_pbr = round(float(df_k["PBR"].iloc[-1]), 2)
+        except Exception:
+            pass
+
+    # 2) 삼성전자(005930) PBR (네이버 모바일 종목 API -> 실패 시 pykrx -> yfinance)
+    try:
+        r_sec = requests.get(
+            "https://m.stock.naver.com/api/stock/005930/integration",
+            headers={**headers, "Referer": "https://finance.naver.com/item/main.naver?code=005930"},
+            timeout=5
+        )
+        if r_sec.status_code == 200:
+            for item in r_sec.json().get("totalInfos", []):
+                if str(item.get("code", "")).lower() == "pbr":
+                    sec_pbr = _to_float(item.get("value"))
+                    break
+    except Exception:
+        pass
+
+    if sec_pbr is None and HAS_PYKRX:
+        try:
+            today = datetime.datetime.now()
+            s_str = (today - datetime.timedelta(days=14)).strftime("%Y%m%d")
+            e_str = today.strftime("%Y%m%d")
+            df_s = krx.get_market_fundamental(s_str, e_str, "005930")
+            if not df_s.empty and "PBR" in df_s.columns:
+                sec_pbr = round(float(df_s["PBR"].iloc[-1]), 2)
+        except Exception:
+            pass
+
+    if sec_pbr is None:
+        try:
+            pb = (yf.Ticker("005930.KS").info or {}).get("priceToBook")
+            if pb is not None:
+                sec_pbr = round(float(pb), 2)
+        except Exception:
+            pass
+
+    return kospi_pbr, sec_pbr
 
 @app.route('/api/checklist_signals', methods=['GET'])
 def api_checklist_signals():
@@ -2705,6 +2783,7 @@ def api_checklist_signals():
 
     fg_data = _fetch_cnn_fear_greed()
     fg_score = fg_data.get("score")
+    kospi_pbr, sec_pbr = _fetch_kr_pbr_metrics()
 
     tickers = ["^VIX", "^GSPC", "SOXX", "SOXL", "TQQQ", "QQQ"]
     try:
@@ -2853,6 +2932,20 @@ def api_checklist_signals():
                 target_curr is not None and target_sma200d is not None and target_sma200w is not None
                 and target_curr < target_sma200d and target_curr < target_sma200w
             )
+        },
+        {
+            "id": "buy_kospi_pbr",
+            "title": "KOSPI PBR 저평가 진입",
+            "rule": "KOSPI PBR ≤ 0.90배",
+            "current": f"{kospi_pbr:.2f}배" if kospi_pbr is not None else "N/A",
+            "met": bool(kospi_pbr is not None and kospi_pbr <= 0.90)
+        },
+        {
+            "id": "buy_sec_pbr",
+            "title": "삼성전자 PBR 1배 이하 저평가",
+            "rule": "삼성전자 PBR ≤ 1.00배 (0.9~1.0배 권역)",
+            "current": f"{sec_pbr:.2f}배" if sec_pbr is not None else "N/A",
+            "met": bool(sec_pbr is not None and sec_pbr <= 1.00)
         }
     ]
 
@@ -2890,12 +2983,19 @@ def api_checklist_signals():
             "current": f"MACD {macd_curr} / Sig {macd_sig_curr}" if macd_curr is not None else "N/A",
             "met": bool(macd_dead_cross)
         },
-        {
+       {
             "id": "sell_sp500_drop",
             "title": "S&P 500 일간 급락 경보",
             "rule": "일간 수익률 ≤ -1.5%",
             "current": f"{gspc_daily_ret:+.2f}%" if gspc_daily_ret is not None else "N/A",
             "met": bool(gspc_daily_ret is not None and gspc_daily_ret <= -1.5)
+        },
+        {
+            "id": "sell_sec_pbr",
+            "title": "삼성전자 PBR 고평가 과열",
+            "rule": "삼성전자 PBR ≥ 2.10배",
+            "current": f"{sec_pbr:.2f}배" if sec_pbr is not None else "N/A",
+            "met": bool(sec_pbr is not None and sec_pbr >= 2.10)
         }
     ]
 
