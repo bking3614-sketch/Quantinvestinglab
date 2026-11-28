@@ -2712,51 +2712,72 @@ def _fetch_kr_pbr_metrics() -> tuple[float | None, float | None]:
         except Exception:
             return None
 
-    # 1-A) KRX 한국거래소 공식 지수 PER/PBR API (KOSPI: indIdx='1', indIdx2='001')
+    # 1-A) [신규 추가] 네이버 금융 KOSPI 지수 페이지 HTML 파싱 (해외 클라우드 IP에서도 정상 작동)
     try:
-        today = datetime.datetime.now()
-        strt_dd = (today - datetime.timedelta(days=14)).strftime("%Y%m%d")
-        end_dd = today.strftime("%Y%m%d")
-        krx_resp = requests.post(
-            "http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd",
-            headers={
-                **headers,
-                "Referer": "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201010106",
-            },
-            data={
-                "bld": "dbms/MDC/STAT/standard/MDCSTAT00701",
-                "locale": "ko_KR",
-                "searchType": "A",
-                "idxIndMidclssCd": "01",
-                "indIdx": "1",
-                "indIdx2": "001",
-                "strtDd": strt_dd,
-                "endDd": end_dd,
-                "csvxls_isNo": "false",
-            },
+        r_nv = requests.get(
+            "https://finance.naver.com/sise/sise_index.naver?code=KOSPI",
+            headers={**headers, "Referer": "https://finance.naver.com/"},
             timeout=6,
         )
-        if krx_resp.status_code == 200:
-            rows = krx_resp.json().get("output", [])
-            for row in reversed(rows):
-                val = _to_float(row.get("WT_STKPRC_NETASST_RTO"))  # KRX 공식 PBR 컬럼명
-                if val is not None and val > 0:
-                    kospi_pbr = round(val, 2)
-                    break
+        if r_nv.status_code == 200:
+            html_txt = r_nv.content.decode("euc-kr", "replace")
+            soup = BeautifulSoup(html_txt, "html.parser")
+            for th in soup.find_all(["th", "dt", "span"]):
+                if "PBR" in th.get_text(strip=True).upper():
+                    nxt = th.find_next(["td", "dd", "em", "strong"])
+                    if nxt:
+                        val = _to_float(nxt.get_text(strip=True))
+                        if val is not None and 0.3 <= val <= 5.0:
+                            kospi_pbr = round(val, 2)
+                            break
     except Exception:
         pass
 
-    # 1-B) KRX 실패 시 pykrx 폴백
-    if kospi_pbr is None and HAS_PYKRX:
+    # 1-B) [순서 이동] KRX 공식 API (기존 1-A 코드를 2순위로 내림)
+    if kospi_pbr is None:
         try:
             today = datetime.datetime.now()
-            s_str = (today - datetime.timedelta(days=14)).strftime("%Y%m%d")
-            e_str = today.strftime("%Y%m%d")
-            df_k = krx.get_index_fundamental(s_str, e_str, "1001")
-            if not df_k.empty and "PBR" in df_k.columns:
-                kospi_pbr = round(float(df_k["PBR"].iloc[-1]), 2)
+            strt_dd = (today - datetime.timedelta(days=14)).strftime("%Y%m%d")
+            end_dd = today.strftime("%Y%m%d")
+            krx_resp = requests.post(
+                "http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd",
+                headers={
+                    **headers,
+                    "Referer": "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201010106",
+                },
+                data={
+                    "bld": "dbms/MDC/STAT/standard/MDCSTAT00701",
+                    "locale": "ko_KR",
+                    "searchType": "A",
+                    "idxIndMidclssCd": "01",
+                    "indIdx": "1",
+                    "indIdx2": "001",
+                    "strtDd": strt_dd,
+                    "endDd": end_dd,
+                    "csvxls_isNo": "false",
+                },
+                timeout=5,
+            )
+            if krx_resp.status_code == 200:
+                rows = krx_resp.json().get("output", [])
+                for row in reversed(rows):
+                    val = _to_float(row.get("WT_STKPRC_NETASST_RTO"))
+                    if val is not None and val > 0:
+                        kospi_pbr = round(val, 2)
+                        break
         except Exception:
             pass
+
+    # 1-C) [기존 pykrx 블록 삭제 후 대체] Yahoo Finance KOSPI200 대표 ETF PBR 폴백
+    if kospi_pbr is None:
+        for proxy_sym in ("069500.KS", "EWY"):
+            try:
+                pb = (yf.Ticker(proxy_sym).info or {}).get("priceToBook")
+                if pb is not None and 0.3 <= float(pb) <= 5.0:
+                    kospi_pbr = round(float(pb), 2)
+                    break
+            except Exception:
+                pass
 
     # 2) 삼성전자(005930) PBR (네이버 모바일 종목 API -> 실패 시 pykrx -> yfinance)
     try:
