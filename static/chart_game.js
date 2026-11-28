@@ -268,7 +268,7 @@
         background: { color: '#161b26' },
         textColor: '#94a3b8',
         fontFamily: 'Inter, -apple-system, sans-serif',
-        fontSize: isMobile ? 10 : 11
+        fontSize: isMobile ? 9 : 11
       },
       grid: {
         vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
@@ -281,7 +281,8 @@
       },
       rightPriceScale: {
         borderColor: '#232d3f',
-        minimumWidth: isMobile ? 46 : 60
+        minimumWidth: isMobile ? 36 : 60,
+        alignLabels: true
       }
     };
 
