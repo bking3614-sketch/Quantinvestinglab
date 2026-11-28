@@ -1894,3 +1894,51 @@
   font-size: 0.74rem;
 }
 
+/* ===================================================================== */
+/* 국내주식(좌) & 해외주식(우) 2열 좌우 배치 그리드 */
+/* ===================================================================== */
+.stock-analysis-dual-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+  align-items: stretch;
+}
+
+/* 각 카드 여백 및 내부 레이아웃 정리 */
+.stock-analysis-dual-grid > .stock-analysis-section {
+  margin-top: 0 !important;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+/* 카드 헤더(제목 + 검색창)가 좁은 폭에서도 줄바꿈 없이 깔끔하게 정렬되도록 조정 */
+.stock-analysis-dual-grid .stock-analysis-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.stock-analysis-dual-grid .stock-search-box input {
+  width: 145px;
+  min-width: 110px;
+}
+
+/* 카드 폭이 절반이 되었으므로 내부 펀더멘털 표와 수급 표는 위·아래(1열)로 배치 */
+.stock-analysis-dual-grid .stock-analysis-grid,
+.stock-analysis-dual-grid .analysis-sub-grid {
+  display: grid;
+  grid-template-columns: 1fr !important;
+  gap: 16px;
+}
+
+/* 화면이 좁은 노트북/태블릿(1280px 이하)에서는 다시 1열(상하)로 자동 전환 */
+@media (max-width: 1280px) {
+  .stock-analysis-dual-grid {
+    grid-template-columns: 1fr;
+  }
+}

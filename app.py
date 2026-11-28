@@ -6,14 +6,78 @@ import time
 import warnings
 import numpy as np
 import pandas as pd
+import re
 import requests
 import yfinance as yf
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from naver_stock import fetch_all_stock_data, resolve_korean_ticker, search_korean_stocks
+from cache import load_or_fetch_stock
+from flask import request, jsonify
+from bs4 import BeautifulSoup
+import yfinance as yf
+
+
+# pykrx가 설치된 환경이면 우선 사용, 없으면 yfinance로 자동 전환
+try:
+    from pykrx import stock as krx
+    HAS_PYKRX = True
+except ImportError:
+    HAS_PYKRX = False
+
+
+# ==============================================================================
+# [Helper] 국내주식 종목명/종목코드 변환 및 조회 보조
+# ==============================================================================
+KR_NAME_TO_CODE = {
+    "삼성전자": "005930",
+    "SK하이닉스": "000660",
+    "현대차": "005380",
+    "기아": "000270",
+    "NAVER": "035420",
+    "네이버": "035420",
+    "카카오": "035720",
+    "셀트리온": "068270",
+    "알테오젠": "196170",
+    "LG에너지솔루션": "373220",
+    "KB금융": "105560",
+}
+
+def resolve_kr_ticker(query: str):
+    q = query.strip()
+    # 이미 6자리 숫자 코드인 경우
+    if re.fullmatch(r"\d{6}", q):
+        try:
+            url = f"https://finance.naver.com/item/main.naver?code={q}"
+            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+            soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+            title_el = soup.select_one(".wrap_company h2 a")
+            name = title_el.get_text(strip=True) if title_el else q
+            return q, name
+        except Exception:
+            return q, q
+
+    # 한글/영문 종목명 검색 (예: "sk이노베이션", "삼성전자")
+    try:
+        ac_url = "https://ac.stock.naver.com/ac"
+        params = {"q": q, "target": "stock,ipo,index,marketindicator"}
+        res = requests.get(ac_url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        items = res.json().get("items", [])
+        for it in items:
+            code = str(it.get("code", "")).strip()
+            nation = str(it.get("nationCode", "")).upper()
+            if re.fullmatch(r"\d{6}", code) and (not nation or nation == "KOR"):
+                return code, it.get("name", q)
+    except Exception:
+        pass
+
+    clean = q.upper().split(".")[0]
+    return clean, q
 
 warnings.filterwarnings('ignore')
 
 app = Flask(__name__, static_folder='static', static_url_path='')
+app.json.ensure_ascii = False
 CORS(app)
 
 try:
@@ -3011,6 +3075,348 @@ def api_ai_analyst_chat():
 # if os.environ.get("VERCEL"):
 # _load_or_fetch_data()
 
+@app.route("/api/search_kr_stock", methods=["GET"])
+def api_search_kr_stock():
+    query = request.args.get("q", "").strip()
+    if not query:
+        return jsonify({"status": "success", "results": []})
+    try:
+        results = search_korean_stocks(query, limit=10)
+        return jsonify({"status": "success", "results": results})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+
+@app.route("/api/stock/<query>", methods=["GET"])
+def get_stock_info(query):
+    force_refresh = request.args.get("refresh", "false").lower() == "true"
+
+    try:
+        # '005930', '005930.KS', '삼성전자', 'SK하이닉스' 모두 6자리 종목코드로 변환
+        clean_ticker = resolve_korean_ticker(query)
+        data = load_or_fetch_stock(
+            ticker=clean_ticker,
+            fetcher=fetch_all_stock_data,
+            force_refresh=force_refresh,
+        )
+        return jsonify({"status": "success", **data})
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "query": query,
+            "message": f"종목 조회 실패: {str(e)}"
+        }), 400
+
+
+# ==============================================================================
+# 1) 국내주식 펀더멘털 & 수급 분석 API: GET /api/stock_analysis/kr?q=005930
+# ==============================================================================
+@app.route("/api/stock_analysis/kr", methods=["GET"])
+def api_stock_analysis_kr():
+    query = request.args.get("q", "").strip()
+    if not query:
+        return jsonify({"status": "error", "message": "종목코드 또는 종목명을 입력해 주세요."}), 400
+
+    ticker_code, stock_name = resolve_kr_ticker(query)
+    if not re.fullmatch(r"\d{6}", ticker_code):
+        return jsonify({"status": "error", "message": f"'{query}'에 해당하는 국내주식 종목코드를 찾지 못했습니다."}), 404
+
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": f"https://finance.naver.com/item/main.naver?code={ticker_code}"
+    }
+
+    try:
+        # 1. 현재가 및 기본 재무 (yfinance .KS -> .KQ)
+        yf_symbol = f"{ticker_code}.KS"
+        tk = yf.Ticker(yf_symbol)
+        hist = tk.history(period="5d")
+        if hist.empty:
+            yf_symbol = f"{ticker_code}.KQ"
+            tk = yf.Ticker(yf_symbol)
+            hist = tk.history(period="5d")
+
+        if hist.empty:
+            return jsonify({"status": "error", "message": f"'{stock_name}({ticker_code})' 시세 데이터를 찾을 수 없습니다."}), 404
+
+        info = tk.info or {}
+        close_price = float(hist["Close"].iloc[-1])
+        prev_close = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else close_price
+        change_pct = round(((close_price - prev_close) / prev_close) * 100, 2) if prev_close else 0.0
+
+        # 2. 네이버 증권 모바일 JSON API로 PER, PBR, 배당수익률, ROE, 영업이익률 조회
+        nv_per = nv_pbr = nv_div = nv_roe = nv_opm = None
+        try:
+            integ_url = f"https://m.stock.naver.com/api/stock/{ticker_code}/integration"
+            res_int = requests.get(integ_url, headers=headers, timeout=6)
+            if res_int.status_code == 200:
+                j_data = res_int.json()
+                if j_data.get("stockName"):
+                    stock_name = j_data["stockName"]
+
+                def _parse_val(v):
+                    if v is None:
+                        return None
+                    s = str(v).replace(",", "").replace("배", "").replace("%", "").replace("원", "").strip()
+                    try:
+                        return float(s)
+                    except Exception:
+                        return None
+
+                for item in j_data.get("totalInfos", []):
+                    code_k = item.get("code", "")
+                    val_v = _parse_val(item.get("value"))
+                    if code_k == "per" and val_v is not None:
+                        nv_per = val_v
+                    elif code_k == "pbr" and val_v is not None:
+                        nv_pbr = val_v
+                    elif code_k == "dividendYieldRatio" and val_v is not None:
+                        nv_div = val_v
+        except Exception:
+            pass
+
+        per = nv_per if nv_per is not None else info.get("trailingPE")
+        pbr = nv_pbr if nv_pbr is not None else info.get("priceToBook")
+        roe = (nv_roe / 100.0) if nv_roe is not None else info.get("returnOnEquity")
+        op_margin = (nv_opm / 100.0) if nv_opm is not None else info.get("operatingMargins")
+        div_yield = nv_div if nv_div is not None else (info.get("dividendYield") * 100 if info.get("dividendYield") else None)
+
+        fundamentals = [
+            {
+                "metric": "PER (주가수익비율)",
+                "value": f"{per:.2f}배" if per else "N/A",
+                "comment": "저평가 구간" if (per and 0 < per < 12) else ("적정 수준" if (per and per < 25) else "성장 프리미엄 / 적자")
+            },
+            {
+                "metric": "PBR (주가순자산비율)",
+                "value": f"{pbr:.2f}배" if pbr else "N/A",
+                "comment": "순자산 대비 저평가 (1배↓)" if (pbr and pbr < 1.0) else "자산가치 이상 평가"
+            },
+            {
+                "metric": "ROE (자기자본이익률)",
+                "value": f"{roe * 100:.1f}%" if roe is not None else "N/A",
+                "comment": "자본효율 우수 (10%↑)" if (roe is not None and roe >= 0.10) else "수익성 개선 필요"
+            },
+            {
+                "metric": "영업이익률 (OPM)",
+                "value": f"{op_margin * 100:.1f}%" if op_margin is not None else "N/A",
+                "comment": "양호한 마진 구조 (10%↑)" if (op_margin is not None and op_margin >= 0.10) else "보통 / 원가 부담"
+            },
+            {
+                "metric": "배당수익률",
+                "value": f"{div_yield:.2f}%" if div_yield else "0.00%",
+                "comment": "고배당 매력 (3%↑)" if (div_yield and div_yield >= 3.0) else "일반 배당"
+            },
+        ]
+
+        if per and 0 < per < 15 and roe is not None and roe >= 0.10:
+            fund_grade = {"label": "펀더멘털 우수", "tier": "tier-2"}
+        elif per and per > 0:
+            fund_grade = {"label": "펀더멘털 양호", "tier": "tier-1"}
+        else:
+            fund_grade = {"label": "실적 점검 필요", "tier": "tier-0"}
+
+        # 3. 네이버 모바일 증권 투자자별 매매동향 JSON API로 외국인·기관·개인 순매수(주) 조회
+        supply_flows = []
+        supply_grade = {"label": "수급 중립", "tier": "tier-1"}
+        try:
+            trend_url = f"https://m.stock.naver.com/api/stock/{ticker_code}/trend?pageSize=20&page=1"
+            res_tr = requests.get(trend_url, headers=headers, timeout=6)
+            if res_tr.status_code == 200:
+                tr_list = res_tr.json()
+                if isinstance(tr_list, list) and len(tr_list) > 0:
+                    def _to_int(val):
+                        if val is None:
+                            return 0
+                        s = str(val).replace(",", "").replace("+", "").strip()
+                        try:
+                            return int(float(s))
+                        except Exception:
+                            return 0
+
+                    def _agg_json(n, label):
+                        sub = tr_list[:n]
+                        f_sum = sum(_to_int(x.get("foreignerPureBuyQuant")) for x in sub)
+                        i_sum = sum(_to_int(x.get("organPureBuyQuant")) for x in sub)
+                        # 개인 순매수 필드가 있으면 직접 쓰고, 없으면 -(외국인+기관)으로 계산
+                        if "individualPureBuyQuant" in sub[0]:
+                            r_sum = sum(_to_int(x.get("individualPureBuyQuant")) for x in sub)
+                        else:
+                            r_sum = -(f_sum + i_sum)
+                        return {
+                            "period": label,
+                            "foreign": f_sum,
+                            "institution": i_sum,
+                            "retail": r_sum
+                        }
+
+                    supply_flows = [
+                        _agg_json(1, "최근 1거래일 (주)"),
+                        _agg_json(5, "최근 5거래일 (주)"),
+                        _agg_json(20, "최근 20거래일 (주)")
+                    ]
+
+                    f_5d = supply_flows[1]["foreign"]
+                    i_5d = supply_flows[1]["institution"]
+                    if f_5d > 0 and i_5d > 0:
+                        supply_grade = {"label": "외인·기관 쌍끌이 매수", "tier": "tier-2"}
+                    elif f_5d > 0 or i_5d > 0:
+                        supply_grade = {"label": "메이저 부분 유입", "tier": "tier-1"}
+                    else:
+                        supply_grade = {"label": "외인·기관 동반 매도", "tier": "tier-0"}
+        except Exception:
+            pass
+
+        if not supply_flows:
+            supply_flows = [
+                {"period": "최근 1거래일", "foreign": 0, "institution": 0, "retail": 0},
+                {"period": "최근 5거래일", "foreign": 0, "institution": 0, "retail": 0},
+                {"period": "최근 20거래일", "foreign": 0, "institution": 0, "retail": 0},
+            ]
+            supply_grade = {"label": "수급 데이터 없음", "tier": "tier-0"}
+
+        return jsonify({
+            "status": "ok",
+            "ticker": ticker_code,
+            "name": stock_name,
+            "price": round(close_price, 0),
+            "change_pct": change_pct,
+            "updated_at": now_str,
+            "fundamental_grade": fund_grade,
+            "fundamentals": fundamentals,
+            "supply_grade": supply_grade,
+            "supply_flows": supply_flows,
+        })
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"국내주식 분석 오류: {str(e)}"}), 500
+
+
+# ==============================================================================
+# 2) 해외주식 펀더멘털 & 수급 분석 API: GET /api/stock_analysis/us?ticker=NVDA
+# ==============================================================================
+@app.route("/api/stock_analysis/us", methods=["GET"])
+def api_stock_analysis_us():
+    ticker = request.args.get("ticker", "").strip().upper()
+    if not ticker:
+        return jsonify({"status": "error", "message": "미국주식 티커를 입력해 주세요."}), 400
+
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    try:
+        tk = yf.Ticker(ticker)
+        hist = tk.history(period="1y")
+        if hist.empty:
+            return jsonify({"status": "error", "message": f"'{ticker}' 티커 데이터를 찾을 수 없습니다."}), 404
+
+        info = tk.info or {}
+        stock_name = info.get("shortName") or info.get("longName") or ticker
+
+        close_price = float(hist["Close"].iloc[-1])
+        prev_close = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else close_price
+        change_pct = round(((close_price - prev_close) / prev_close) * 100, 2) if prev_close else 0.0
+
+        trailing_pe = info.get("trailingPE")
+        forward_pe = info.get("forwardPE")
+        peg_ratio = info.get("pegRatio")
+        rev_growth = info.get("revenueGrowth")
+        roe = info.get("returnOnEquity")
+        target_price = info.get("targetMeanPrice")
+        upside = ((target_price - close_price) / close_price * 100) if (target_price and close_price) else None
+
+        fundamentals = [
+            {
+                "metric": "Trailing / Forward PER",
+                "value": f"{trailing_pe:.1f}x / {forward_pe:.1f}x" if (trailing_pe and forward_pe) else (f"{forward_pe:.1f}x" if forward_pe else "N/A"),
+                "comment": "실적 성장으로 밸류 부담 완화" if (trailing_pe and forward_pe and forward_pe < trailing_pe) else "멀티플 수준 점검"
+            },
+            {
+                "metric": "PEG 비율",
+                "value": f"{peg_ratio:.2f}" if peg_ratio else "N/A",
+                "comment": "성장 대비 저평가 (1.5↓)" if (peg_ratio and peg_ratio < 1.5) else "성장 프리미엄 반영"
+            },
+            {
+                "metric": "매출 성장률 (YoY)",
+                "value": f"{rev_growth * 100:+.1f}%" if rev_growth is not None else "N/A",
+                "comment": "고성장 지속 (15%↑)" if (rev_growth and rev_growth >= 0.15) else "안정적 외형 성장"
+            },
+            {
+                "metric": "ROE (자기자본이익률)",
+                "value": f"{roe * 100:.1f}%" if roe else "N/A",
+                "comment": "우량 수익성 (15%↑)" if (roe and roe >= 0.15) else "보통 수준"
+            },
+            {
+                "metric": "월가 평균 목표가 (괴리율)",
+                "value": f"${target_price:.2f} ({upside:+.1f}%)" if target_price else "N/A",
+                "comment": "상승 여력 보유" if (upside and upside > 10) else "목표가 근접"
+            },
+        ]
+
+        if (rev_growth and rev_growth >= 0.15) and (roe and roe >= 0.15):
+            fund_grade = {"label": "고성장·우량 펀더멘털", "tier": "tier-2"}
+        elif forward_pe and forward_pe > 0:
+            fund_grade = {"label": "펀더멘털 양호", "tier": "tier-1"}
+        else:
+            fund_grade = {"label": "밸류에이션 점검", "tier": "tier-0"}
+
+        inst_pct = info.get("heldPercentInstitutions")
+        short_pct = info.get("shortPercentOfFloat")
+        vol_today = float(hist["Volume"].iloc[-1])
+        vol_20d_avg = float(hist["Volume"].tail(20).mean())
+        rvol = (vol_today / vol_20d_avg) if vol_20d_avg > 0 else 1.0
+
+        ma50 = float(hist["Close"].tail(50).mean())
+        ma200 = float(hist["Close"].tail(200).mean()) if len(hist) >= 200 else ma50
+        above_ma50 = close_price > ma50
+        above_ma200 = close_price > ma200
+
+        supply_metrics = [
+            {
+                "metric": "기관 보유 비중",
+                "value": f"{inst_pct * 100:.1f}%" if inst_pct else "N/A",
+                "comment": "기관 메이저 수급 탄탄 (60%↑)" if (inst_pct and inst_pct >= 0.60) else "개인·기관 혼재"
+            },
+            {
+                "metric": "유동주식 공매도 비율",
+                "value": f"{short_pct * 100:.2f}%" if short_pct else "N/A",
+                "comment": "공매도 압력 낮음 (5%↓)" if (short_pct and short_pct < 0.05) else "숏스퀴즈 또는 하방 압력 주의"
+            },
+            {
+                "metric": "상대 거래량 (RVOL 20일)",
+                "value": f"{rvol:.2f}배",
+                "comment": "거래량 동반 수급 유입" if rvol >= 1.2 else "평균 수준 거래량"
+            },
+            {
+                "metric": "추세 수급 (50일 / 200일선)",
+                "value": f"{'상회' if above_ma50 else '하회'} / {'상회' if above_ma200 else '하회'}",
+                "comment": "중장기 정배열 매수 우위" if (above_ma50 and above_ma200) else "이동평균선 저항/조정 구간"
+            },
+        ]
+
+        if above_ma50 and above_ma200 and (inst_pct and inst_pct >= 0.5):
+            supply_grade = {"label": "기관·추세 수급 강세", "tier": "tier-2"}
+        elif above_ma200:
+            supply_grade = {"label": "중기 수급 양호", "tier": "tier-1"}
+        else:
+            supply_grade = {"label": "수급 이탈 / 관망", "tier": "tier-0"}
+
+        return jsonify({
+            "status": "ok",
+            "ticker": ticker,
+            "name": stock_name,
+            "price": round(close_price, 2),
+            "change_pct": change_pct,
+            "updated_at": now_str,
+            "fundamental_grade": fund_grade,
+            "fundamentals": fundamentals,
+            "supply_grade": supply_grade,
+            "supply_metrics": supply_metrics,
+        })
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"해외주식 분석 오류: {str(e)}"}), 500
+    
 if __name__ == '__main__':
     loader_thread = threading.Thread(target=_load_or_fetch_data)
     loader_thread.daemon = True

@@ -614,7 +614,7 @@
     return res;
   }
 
-  function calcSuperTrend(candles, period = 10, multiplier = 3.0) {
+  function calcSuperTrend(candles, period = 10, multiplier = 3.0, colorUp = '#10b981', colorDn = '#ef4444') {
     const res = [];
     if (candles.length < period) return res;
 
@@ -666,7 +666,7 @@
       res.push({
         time: candles[i].time,
         value: trend === 1 ? lower : upper,
-        color: trend === 1 ? '#10b981' : '#ef4444'
+        color: trend === 1 ? colorUp : colorDn
       });
     }
     return res;
@@ -838,18 +838,26 @@
     }
   }
 
-  function renderSuperTrend(candles, priceFormat) {
+ function renderSuperTrend(candles, priceFormat) {
+    const curvedType = (typeof LightweightCharts !== 'undefined' && LightweightCharts.LineType?.Curved !== undefined)
+      ? LightweightCharts.LineType.Curved : 2;
     if (state.indicators.st.on) {
       if (!state.indicatorSeries.stSeries) {
         state.indicatorSeries.stSeries = state.mainChart.addLineSeries({
-          color: state.indicators.st.colorUp || '#10b981',
           lineWidth: 2,
+          lineType: curvedType,
           priceFormat
         });
       } else {
-        state.indicatorSeries.stSeries.applyOptions({ priceFormat });
+        state.indicatorSeries.stSeries.applyOptions({ lineType: curvedType, priceFormat });
       }
-      const stData = calcSuperTrendColored(candles, state.indicators.st.period, state.indicators.st.multiplier);
+      const stData = calcSuperTrend(
+        candles,
+        state.indicators.st.period,
+        state.indicators.st.multiplier,
+        state.indicators.st.colorUp || DEFAULT_COLORS.stUp,
+        state.indicators.st.colorDn || DEFAULT_COLORS.stDn
+      );
       state.indicatorSeries.stSeries.setData(stData);
     } else if (state.indicatorSeries.stSeries) {
       state.indicatorSeries.stSeries.setData([]);
@@ -1072,14 +1080,13 @@
 
     const newCandle = state.candles[state.currentIdx];
 
-    // R:R 자동 익절/손절 체크
+// R:R (자동 익절 / 손절) 체크
     if (state.activeRR && state.holdingQty > 0) {
-      if (newCandle.high >= state.activeRR.tp) {
-        // 익절 도달 -> 자동 청산
-        executeAutoLiquidation(state.activeRR.tp, '익절');
-      } else if (newCandle.low <= state.activeRR.sl) {
-        // 손절 도달 -> 자동 청산
-        executeAutoLiquidation(state.activeRR.sl, '손절');
+      const rr = state.activeRR;
+      if (rr.tp && newCandle.high >= rr.tp) {
+        executeAutoLiquidation(rr.tp, '익절');
+      } else if (rr.sl && newCandle.low <= rr.sl) {
+        executeAutoLiquidation(rr.sl, '손절');
       }
     }
 
@@ -2975,17 +2982,12 @@
     state.indicators.ma.lines.forEach((line, i) => {
       const btn = document.getElementById(`cgSwatchMa${i + 1}`);
       if (btn) btn.style.background = line.color;
+      updateMaLegendColor(i, line.color);
     });
     const stUp = document.getElementById('cgSwatchStUp');
     const stDn = document.getElementById('cgSwatchStDn');
     if (stUp) stUp.style.background = state.indicators.st.colorUp || DEFAULT_COLORS.stUp;
     if (stDn) stDn.style.background = state.indicators.st.colorDn || DEFAULT_COLORS.stDn;
-
-    // MA 범례 점 색상 동기화
-    state.indicators.ma.lines.forEach((line, i) => {
-      const dot = document.querySelector(`#cgSwatchMa${i + 1}`);
-      if (dot) dot.style.background = line.color;
-    });
   }
 
   /** ── 컬러 피커 상태 ── **/
@@ -3460,24 +3462,16 @@
     if (!state.indicatorSeries.stSeries) return;
     const visibleCandles = getVisibleCandles();
     if (visibleCandles.length === 0) return;
-    const stData = calcSuperTrendColored(visibleCandles, state.indicators.st.period, state.indicators.st.multiplier);
+    const stData = calcSuperTrend(
+      visibleCandles,
+      state.indicators.st.period,
+      state.indicators.st.multiplier,
+      state.indicators.st.colorUp || DEFAULT_COLORS.stUp,
+      state.indicators.st.colorDn || DEFAULT_COLORS.stDn
+    );
     state.indicatorSeries.stSeries.setData(stData);
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // renderSuperTrend 색상 패치 (colorUp/colorDn 반영)
-  // ─────────────────────────────────────────────────────────────
-
-  // calcSuperTrend 내 color 필드를 colorUp/colorDn 설정값으로 덮어씌움
-  function calcSuperTrendColored(candles, period, multiplier) {
-    const res = calcSuperTrend(candles, period, multiplier);
-    const upColor = state.indicators.st.colorUp || DEFAULT_COLORS.stUp;
-    const dnColor = state.indicators.st.colorDn || DEFAULT_COLORS.stDn;
-    return res.map(item => ({
-      ...item,
-      color: item.color === '#10b981' ? upColor : dnColor
-    }));
-  }
 
   // ─────────────────────────────────────────────────────────────
   // 모듈 초기화 (DOM 준비 후 실행)

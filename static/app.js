@@ -6,7 +6,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   // ── 전역 상태 ──
   const state = {
-    currentTab: 'seasonality', // 'seasonality' | 'permanent' | 'allweather'
+    currentTab: 'checklist', // 'checklist' | 'seasonality' | 'permanent' | 'allweather'
     assets: [
       { ticker: 'SOXL', name: '필라델피아 반도체 3X', weight: 50 },
       { ticker: 'TQQQ', name: '나스닥100 3X', weight: 50 }
@@ -3749,6 +3749,163 @@ async function pollStatusUntilReady(maxAttempts = 30) {
     });
   }
 
+  // ════════════════════════════════════════════════════════════
+  // 🌟 [HOME 하단] 국내주식 & 해외주식 펀더멘털 & 수급 분석 모듈 🌟
+  // ════════════════════════════════════════════════════════════
+  function setupHomeStockAnalysis() {
+    const krInput = document.getElementById('krTickerInput');
+    const krBtn = document.getElementById('btnRunKrAnalysis');
+    const usInput = document.getElementById('usTickerInput');
+    const usBtn = document.getElementById('btnRunUsAnalysis');
+
+    if (krBtn && krInput) {
+      krBtn.addEventListener('click', () => fetchKrStockAnalysis(krInput.value.trim()));
+      krInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') fetchKrStockAnalysis(krInput.value.trim());
+      });
+    }
+
+    if (usBtn && usInput) {
+      usBtn.addEventListener('click', () => fetchUsStockAnalysis(usInput.value.trim().toUpperCase()));
+      usInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') fetchUsStockAnalysis(usInput.value.trim().toUpperCase());
+      });
+    }
+
+    // 초기 진입 시 대표 종목 기본 조회 (삼성전자 / NVDA)
+    if (krInput) {
+      krInput.value = '005930';
+      fetchKrStockAnalysis('005930');
+    }
+    if (usInput) {
+      usInput.value = 'NVDA';
+      fetchUsStockAnalysis('NVDA');
+    }
+  }
+
+  function formatNetFlow(val) {
+    if (val === null || val === undefined || isNaN(val)) return '-';
+    const num = Number(val);
+    const color = num > 0 ? '#f87171' : (num < 0 ? '#38bdf8' : '#94a3b8'); // 한국 증시 기준 순매수 빨강/순매도 파랑
+    const sign = num > 0 ? '+' : '';
+    return `<span style="color: ${color}; font-weight: 600;">${sign}${num.toLocaleString()}</span>`;
+  }
+
+  // 1) 국내주식 펀더멘털 & 수급 API 연동
+  async function fetchKrStockAnalysis(query) {
+    if (!query) return;
+    const metaEl = document.getElementById('krAnalysisMeta');
+    const fundBody = document.getElementById('krFundTableBody');
+    const supplyBody = document.getElementById('krSupplyTableBody');
+    const fundBadge = document.getElementById('krFundBadge');
+    const supplyBadge = document.getElementById('krSupplyBadge');
+
+    if (metaEl) metaEl.textContent = `'${query}' 펀더멘털 및 외국인·기관 수급 데이터 조회 중...`;
+
+    try {
+      const resp = await fetch(`/api/stock_analysis/kr?q=${encodeURIComponent(query)}`);
+      const res = await resp.json();
+      if (!resp.ok || res.status === 'error') {
+        throw new Error(res.message || '국내주식 데이터 조회 실패');
+      }
+
+      if (metaEl) {
+        metaEl.textContent = `${res.name} (${res.ticker}) · 현재가 ${Number(res.price).toLocaleString()}원 (${res.change_pct >= 0 ? '+' : ''}${res.change_pct}%) · 기준 ${res.updated_at}`;
+      }
+
+      // 펀더멘털 배지 및 테이블
+      if (fundBadge && res.fundamental_grade) {
+        fundBadge.textContent = res.fundamental_grade.label;
+        fundBadge.className = `cl-signal-badge ${res.fundamental_grade.tier || 'tier-1'}`;
+      }
+      if (fundBody && Array.isArray(res.fundamentals)) {
+        fundBody.innerHTML = res.fundamentals.map(item => `
+          <tr>
+            <td style="font-weight: 600;">${item.metric}</td>
+            <td style="font-family: var(--font-mono);">${item.value}</td>
+            <td style="color: #94a3b8; font-size: 0.76rem;">${item.comment}</td>
+          </tr>
+        `).join('');
+      }
+
+      // 수급 배지 및 테이블
+      if (supplyBadge && res.supply_grade) {
+        supplyBadge.textContent = res.supply_grade.label;
+        supplyBadge.className = `cl-signal-badge ${res.supply_grade.tier || 'tier-1'}`;
+      }
+      if (supplyBody && Array.isArray(res.supply_flows)) {
+        supplyBody.innerHTML = res.supply_flows.map(row => `
+          <tr>
+            <td style="font-weight: 600;">${row.period}</td>
+            <td style="font-family: var(--font-mono);">${formatNetFlow(row.foreign)}</td>
+            <td style="font-family: var(--font-mono);">${formatNetFlow(row.institution)}</td>
+            <td style="font-family: var(--font-mono);">${formatNetFlow(row.retail)}</td>
+          </tr>
+        `).join('');
+      }
+    } catch (err) {
+      if (metaEl) metaEl.textContent = `조회 오류: ${err.message}`;
+      if (fundBody) fundBody.innerHTML = `<tr><td colspan="3" class="cl-empty-cell">${err.message}</td></tr>`;
+      if (supplyBody) supplyBody.innerHTML = `<tr><td colspan="4" class="cl-empty-cell">데이터를 불러올 수 없습니다.</td></tr>`;
+    }
+  }
+
+  // 2) 해외주식 펀더멘털 & 수급 API 연동
+  async function fetchUsStockAnalysis(ticker) {
+    if (!ticker) return;
+    const metaEl = document.getElementById('usAnalysisMeta');
+    const fundBody = document.getElementById('usFundTableBody');
+    const supplyBody = document.getElementById('usSupplyTableBody');
+    const fundBadge = document.getElementById('usFundBadge');
+    const supplyBadge = document.getElementById('usSupplyBadge');
+
+    if (metaEl) metaEl.textContent = `'${ticker}' 펀더멘털 및 기관/거래량 수급 조회 중...`;
+
+    try {
+      const resp = await fetch(`/api/stock_analysis/us?ticker=${encodeURIComponent(ticker)}`);
+      const res = await resp.json();
+      if (!resp.ok || res.status === 'error') {
+        throw new Error(res.message || '해외주식 데이터 조회 실패');
+      }
+
+      if (metaEl) {
+        metaEl.textContent = `${res.name} (${res.ticker}) · $${Number(res.price).toFixed(2)} (${res.change_pct >= 0 ? '+' : ''}${res.change_pct}%) · 기준 ${res.updated_at}`;
+      }
+
+      if (fundBadge && res.fundamental_grade) {
+        fundBadge.textContent = res.fundamental_grade.label;
+        fundBadge.className = `cl-signal-badge ${res.fundamental_grade.tier || 'tier-1'}`;
+      }
+      if (fundBody && Array.isArray(res.fundamentals)) {
+        fundBody.innerHTML = res.fundamentals.map(item => `
+          <tr>
+            <td style="font-weight: 600;">${item.metric}</td>
+            <td style="font-family: var(--font-mono);">${item.value}</td>
+            <td style="color: #94a3b8; font-size: 0.76rem;">${item.comment}</td>
+          </tr>
+        `).join('');
+      }
+
+      if (supplyBadge && res.supply_grade) {
+        supplyBadge.textContent = res.supply_grade.label;
+        supplyBadge.className = `cl-signal-badge ${res.supply_grade.tier || 'tier-1'}`;
+      }
+      if (supplyBody && Array.isArray(res.supply_metrics)) {
+        supplyBody.innerHTML = res.supply_metrics.map(item => `
+          <tr>
+            <td style="font-weight: 600;">${item.metric}</td>
+            <td style="font-family: var(--font-mono);">${item.value}</td>
+            <td style="color: #94a3b8; font-size: 0.76rem;">${item.comment}</td>
+          </tr>
+        `).join('');
+      }
+    } catch (err) {
+      if (metaEl) metaEl.textContent = `조회 오류: ${err.message}`;
+      if (fundBody) fundBody.innerHTML = `<tr><td colspan="3" class="cl-empty-cell">${err.message}</td></tr>`;
+      if (supplyBody) supplyBody.innerHTML = `<tr><td colspan="3" class="cl-empty-cell">데이터를 불러올 수 없습니다.</td></tr>`;
+    }
+  }
+
   // ── 초기화 실행 시퀀스 ──
   async function init() {
     setupTabNavigation();
@@ -3759,16 +3916,15 @@ async function pollStatusUntilReady(maxAttempts = 30) {
     setupDynamicControls();
     setupAiAnalysts();
 
+    // 체크리스트 메인 탭 즉시 초기화 및 실시간 데이터 조회
+    initChecklistIfNeeded();
+    setupHomeStockAnalysis();
+
     initMonthsGrid();
     setRebalMonths(1);
     await loadTickers();
     await fetchDateRange();
-    const ready = await checkDataStatus();
-    if (ready) {
-      runBacktest();
-    } else {
-      pollStatusUntilReady(15);
-    }
+    await checkDataStatus();
   }
 
   init();

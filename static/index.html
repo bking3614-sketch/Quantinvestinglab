@@ -31,11 +31,15 @@
 
       <!-- 🌟 상단 3대 메인 탭 네비게이션 🌟 -->
       <nav class="main-tab-nav">
-        <button type="button" class="tab-btn active" id="tabBtnSeasonality" data-tab="seasonality">
-          <i class="fa-solid fa-chart-line-up"></i>
+        <button type="button" class="tab-btn active" id="tabBtnChecklist" data-tab="checklist">
+          <i class="fa-solid fa-house"></i>
+          <span>HOME</span>
+        </button>
+        <button type="button" class="tab-btn" id="tabBtnSeasonality" data-tab="seasonality">
+          <i class="fa-solid fa-traffic-light"></i>
           <span>ETF 계절성 스위칭 터미널</span>
         </button>
-        <button type="button" class="tab-btn" id="tabBtnChecklist" data-tab="checklist"><i class="fa-solid fa-traffic-light"></i><span>체크리스트</span></button>
+        <button type="button" class="tab-btn" id="tabBtnChecklist2" data-tab="checklist"><i class="fa-solid fa-traffic-light"></i><span>체크리스트</span></button>
         <button type="button" class="tab-btn" id="tabBtnPermanent" data-tab="permanent">
           <i class="fa-solid fa-shield-halved"></i>
           <span>영구 포트폴리오</span>
@@ -66,7 +70,7 @@
     <!-- ════════════════════════════════════════════════════════════
          [Tab 1] ETF 계절성 스위칭 알파 터미널
          ════════════════════════════════════════════════════════════ -->
-    <div class="tab-pane active" id="paneSeasonality">
+    <div class="tab-pane" id="paneSeasonality" style="display: none;">
       <div class="main-layout">
         <!-- 좌측 컨트롤 사이드바 -->
         <aside class="control-panel">
@@ -3103,7 +3107,7 @@
     <!-- ════════════════════════════════════════════════════════════
          [Tab 7] 매수/매도 신호등 체크리스트
          ════════════════════════════════════════════════════════════ -->
-    <div class="tab-pane" id="paneChecklist" style="display: none;">
+    <div class="tab-pane active" id="paneChecklist">
       <div class="cl-toolbar">
         <div class="cl-toolbar-title">
           <i class="fa-solid fa-traffic-light text-primary"></i>
@@ -3220,6 +3224,156 @@
           </div>
         </div>
       </div>
+      <!-- ════════════════════════════════════════════════════════════
+           [HOME 추가 섹션 1] 국내주식 펀더멘털 & 수급 분석
+           ════════════════════════════════════════════════════════════ -->
+    <div class="stock-analysis-dual-grid">
+      <section class="cl-card" id="homeKrAnalysisSection" style="margin-top: 24px;">
+        <div class="cl-card-header" style="flex-wrap: wrap; gap: 12px;">
+          <div class="cl-card-title">
+            <i class="fa-solid fa-building-columns text-primary"></i>
+            <div>
+              <h3 style="margin: 0; font-size: 1.05rem;">국내주식 펀더멘털 &amp; 수급 분석</h3>
+              <span class="cl-updated-text" id="krAnalysisMeta">종목코드(6자리) 또는 종목명을 입력하여 펀더멘털·수급 지표를 조회하세요.</span>
+            </div>
+          </div>
+
+          <div class="cl-toolbar-controls" style="display: flex; gap: 8px; align-items: center;">
+            <input type="text" id="krTickerInput" class="cl-select" list="krPresetTickers" placeholder="예: 005930 (삼성전자)" style="width: 210px;">
+            <datalist id="krPresetTickers">
+              <option value="005930">삼성전자 (005930)</option>
+              <option value="000660">SK하이닉스 (000660)</option>
+              <option value="005380">현대차 (005380)</option>
+              <option value="035420">NAVER (035420)</option>
+              <option value="068270">셀트리온 (068270)</option>
+              <option value="196170">알테오젠 (196170)</option>
+            </datalist>
+            <button type="button" class="cl-refresh-btn" id="btnRunKrAnalysis">
+              <i class="fa-solid fa-magnifying-glass-chart"></i> 분석 조회
+            </button>
+          </div>
+        </div>
+
+        <!-- 국내주식 결과 그리드 (좌: 펀더멘털 밸류에이션 / 우: 외국인·기관 수급 현황) -->
+        <div class="cl-lists-grid" style="margin-top: 14px;">
+          <!-- 좌측: 펀더멘털 지표 -->
+          <div class="cl-table-wrap">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong style="font-size: 0.9rem; color: #e2e8f0;"><i class="fa-solid fa-scale-balanced text-warning"></i> 펀더멘털 &amp; 밸류에이션</strong>
+              <span class="cl-signal-badge tier-0" id="krFundBadge">대기 중</span>
+            </div>
+            <table class="cl-table">
+              <thead>
+                <tr>
+                  <th>핵심 지표</th>
+                  <th>현재 수치</th>
+                  <th>업종/기준 평가</th>
+                </tr>
+              </thead>
+              <tbody id="krFundTableBody">
+                <tr><td colspan="3" class="cl-empty-cell">종목 입력 후 [분석 조회]를 클릭하세요.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 우측: 투자자별 수급 동향 -->
+          <div class="cl-table-wrap">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong style="font-size: 0.9rem; color: #e2e8f0;"><i class="fa-solid fa-arrows-left-right-to-line" style="color: #38bdf8;"></i> 투자자별 수급 동향 (외국인·기관·개인)</strong>
+              <span class="cl-signal-badge tier-0" id="krSupplyBadge">대기 중</span>
+            </div>
+            <table class="cl-table">
+              <thead>
+                <tr>
+                  <th>기간</th>
+                  <th>외국인 순매수</th>
+                  <th>기관 순매수</th>
+                  <th>개인 순매수</th>
+                </tr>
+              </thead>
+              <tbody id="krSupplyTableBody">
+                <tr><td colspan="4" class="cl-empty-cell">종목 입력 후 [분석 조회]를 클릭하세요.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════════════
+           [HOME 추가 섹션 2] 해외주식 펀더멘털 & 수급 분석
+           ════════════════════════════════════════════════════════════ -->
+      <section class="cl-card" id="homeUsAnalysisSection" style="margin-top: 24px;">
+        <div class="cl-card-header" style="flex-wrap: wrap; gap: 12px;">
+          <div class="cl-card-title">
+            <i class="fa-solid fa-globe text-primary"></i>
+            <div>
+              <h3 style="margin: 0; font-size: 1.05rem;">해외주식 펀더멘털 &amp; 수급 분석 (US / Global)</h3>
+              <span class="cl-updated-text" id="usAnalysisMeta">미국주식 티커(예: NVDA, AAPL, MSFT)를 입력하여 펀더멘털·기관/거래량 수급을 조회하세요.</span>
+            </div>
+          </div>
+
+          <div class="cl-toolbar-controls" style="display: flex; gap: 8px; align-items: center;">
+            <input type="text" id="usTickerInput" class="cl-select" list="usPresetTickers" placeholder="예: NVDA, AAPL, TSLA" style="width: 210px; text-transform: uppercase;">
+            <datalist id="usPresetTickers">
+              <option value="NVDA">NVIDIA (NVDA)</option>
+              <option value="AAPL">Apple (AAPL)</option>
+              <option value="MSFT">Microsoft (MSFT)</option>
+              <option value="GOOGL">Alphabet (GOOGL)</option>
+              <option value="AMZN">Amazon (AMZN)</option>
+              <option value="META">Meta Platforms (META)</option>
+              <option value="TSLA">Tesla (TSLA)</option>
+              <option value="AVGO">Broadcom (AVGO)</option>
+            </datalist>
+            <button type="button" class="cl-refresh-btn" id="btnRunUsAnalysis">
+              <i class="fa-solid fa-magnifying-glass-chart"></i> 분석 조회
+            </button>
+          </div>
+        </div>
+
+        <!-- 해외주식 결과 그리드 (좌: 펀더멘털·성장성 / 우: 거래량·기관 수급 및 공매도/옵션) -->
+        <div class="cl-lists-grid" style="margin-top: 14px;">
+          <!-- 좌측: 펀더멘털 & 월가 컨센서스 -->
+          <div class="cl-table-wrap">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong style="font-size: 0.9rem; color: #e2e8f0;"><i class="fa-solid fa-chart-pie text-warning"></i> 펀더멘털 &amp; 실적 성장성</strong>
+              <span class="cl-signal-badge tier-0" id="usFundBadge">대기 중</span>
+            </div>
+            <table class="cl-table">
+              <thead>
+                <tr>
+                  <th>핵심 지표</th>
+                  <th>현재 수치</th>
+                  <th>상태 / 컨센서스</th>
+                </tr>
+              </thead>
+              <tbody id="usFundTableBody">
+                <tr><td colspan="3" class="cl-empty-cell">티커 입력 후 [분석 조회]를 클릭하세요.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 우측: 글로벌 수급 & 거래량·기관 지표 -->
+          <div class="cl-table-wrap">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong style="font-size: 0.9rem; color: #e2e8f0;"><i class="fa-solid fa-water" style="color: #34d399;"></i> 수급 강도 &amp; 기관·공매도 지표</strong>
+              <span class="cl-signal-badge tier-0" id="usSupplyBadge">대기 중</span>
+            </div>
+            <table class="cl-table">
+              <thead>
+                <tr>
+                  <th>수급 항목</th>
+                  <th>현재 값</th>
+                  <th>시그널 해석</th>
+                </tr>
+              </thead>
+              <tbody id="usSupplyTableBody">
+                <tr><td colspan="3" class="cl-empty-cell">티커 입력 후 [분석 조회]를 클릭하세요.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
     </div><!-- /paneChecklist -->
   </div>
 
