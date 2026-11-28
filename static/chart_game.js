@@ -261,12 +261,14 @@
       return;
     }
 
+    const isMobile = window.innerWidth <= 768;
+
     const baseOpts = {
       layout: {
         background: { color: '#161b26' },
         textColor: '#94a3b8',
         fontFamily: 'Inter, -apple-system, sans-serif',
-        fontSize: 11
+        fontSize: isMobile ? 10 : 11
       },
       grid: {
         vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
@@ -279,7 +281,7 @@
       },
       rightPriceScale: {
         borderColor: '#232d3f',
-        minimumWidth: 60
+        minimumWidth: isMobile ? 46 : 60
       }
     };
 
@@ -292,7 +294,7 @@
         borderColor: '#232d3f',
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 8,
+        rightOffset: isMobile ? 2 : 8,
         visible: false
       },
       rightPriceScale: {
@@ -320,7 +322,7 @@
         borderColor: '#232d3f',
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 8,
+        rightOffset: isMobile ? 2 : 8,
         visible: false
       },
       rightPriceScale: {
@@ -358,7 +360,7 @@
         borderColor: '#232d3f',
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 8,
+        rightOffset: isMobile ? 2 : 8,
         visible: true
       },
       rightPriceScale: {
@@ -556,6 +558,9 @@
   function getDynamicPriceFormat(price) {
     if (price !== undefined && price !== null && price < 5) {
       return { type: 'price', precision: 4, minMove: 0.0001 };
+    }
+    if (state.currency === 'KRW') {
+      return { type: 'price', precision: 0, minMove: 1 };
     }
     return { type: 'price', precision: 2, minMove: 0.01 };
   }
@@ -781,10 +786,17 @@
             lineWidth: idx === 1 ? 2 : 1.2,
             lineType: curvedType,
             crosshairMarkerVisible: false,
+            lastValueVisible: false,
+            priceLineVisible: false,
             priceFormat: priceFormat
           });
         } else {
-          state.indicatorSeries[key].applyOptions({ lineType: curvedType, priceFormat });
+          state.indicatorSeries[key].applyOptions({
+            lineType: curvedType,
+            lastValueVisible: false,
+            priceLineVisible: false,
+            priceFormat
+          });
         }
         const maData = calcSMA(candles, cfg.period);
         state.indicatorSeries[key].setData(maData);
@@ -1258,9 +1270,20 @@
       renderChart();
       updateUI();
 
-      // 타임스케일 전체 맞춤
+      // 시작 시 최근 35개(모바일) / 60개(PC) 캔들 크기로 확대 표시
       if (state.mainChart) {
-        state.mainChart.timeScale().fitContent();
+        const visibleCandles = getVisibleCandles();
+        const totalBars = visibleCandles.length;
+        const targetBars = window.innerWidth <= 768 ? 35 : 60;
+
+        if (totalBars > targetBars) {
+          state.mainChart.timeScale().setVisibleLogicalRange({
+            from: totalBars - targetBars,
+            to: totalBars + 2
+          });
+        } else {
+          state.mainChart.timeScale().fitContent();
+        }
       }
 
       // 우측 하단 인사이트 패널 갱신 (재무제표 & 뉴스)
