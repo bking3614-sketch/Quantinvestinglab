@@ -87,7 +87,7 @@
       statusEl.textContent = `Supabase 연결 오류: ${lastInitError}`;
       statusEl.style.color = '#fca5a5';
     } else {
-      statusEl.textContent = '커리어 모드 기록과 랭킹을 저장하려면 로그인하세요';
+      statusEl.textContent = '데이터 모드 기록과 랭킹을 저장하려면 로그인하세요';
       statusEl.style.color = '#94a3b8';
     }
   }

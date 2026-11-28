@@ -169,7 +169,7 @@
       resFinalAsset: document.getElementById('cgResFinalAsset'),
       resTradesInfo: document.getElementById('cgResTradesInfo'),
 
-      // 로비 & 커리어 모드 UI
+      // 로비 & 데이터 모드 UI
       lobbyView: document.getElementById('cgLobbyView'),
       gamePlayView: document.getElementById('cgGamePlayView'),
       btnStartPractice: document.getElementById('cgBtnStartPractice'),
@@ -1307,7 +1307,7 @@
     if (dom.resFinalAsset) dom.resFinalAsset.textContent = formatPrice(finalAsset);
     if (dom.resTradesInfo) dom.resTradesInfo.textContent = `${totalTrades}회 / ${winRate.toFixed(1)}%`;
 
-    // 커리어 모드 종료 시 최종 평가자산 저장 (Supabase DB + localStorage 폴백)
+    // 데이터 모드 종료 시 최종 평가자산 저장 (Supabase DB + localStorage 폴백)
     if (state.gameMode === 'career' && !state.gameEnded) {
       state.gameEnded = true;
       const profitAmount = Math.round(finalAsset - state.initialCapital);
@@ -2114,11 +2114,11 @@
     activeHofPeriod = period || 'all';
     if (dom.hofFilterBadge) {
       const badgeMap = {
-        all: '커리어 전체 부문',
+        all: '데이터 모드 부문',
         week: '주간 부문 (최근 7일)',
         month: '월간 부문 (최근 30일)'
       };
-      dom.hofFilterBadge.textContent = badgeMap[activeHofPeriod] || '커리어 전체 부문';
+      dom.hofFilterBadge.textContent = badgeMap[activeHofPeriod] || '데이터 모드 부문';
     }
 
     let entries = [];
@@ -2206,7 +2206,7 @@
   function syncCapitalControlForMode() {
     const isCareer = state.gameMode === 'career';
     if (dom.gameModeBadge) {
-      dom.gameModeBadge.textContent = isCareer ? '커리어 모드' : '연습 모드';
+      dom.gameModeBadge.textContent = isCareer ? '데이터 모드' : '연습 모드';
       dom.gameModeBadge.classList.toggle('career', isCareer);
     }
 
@@ -2298,13 +2298,13 @@
         if (window.sbAuth && typeof window.sbAuth.openLoginModal === 'function') {
           window.sbAuth.openLoginModal();
         } else {
-          alert('커리어 모드는 Google 로그인 후 이용할 수 있습니다.');
+          alert('데이터 모드는 Google 로그인 후 이용할 수 있습니다.');
         }
       });
     }
     if (dom.btnResetCareer) {
       dom.btnResetCareer.addEventListener('click', () => {
-        if (confirm('커리어 모드 누적 자본금과 플레이 기록을 1,000만 원으로 초기화하시겠습니까?')) {
+        if (confirm('데이터 모드 누적 자본금과 플레이 기록을 1,000만 원으로 초기화하시겠습니까?')) {
           resetCareerToDefault(false);
         }
       });
